@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>من سيربح المليون</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Orbitron:wght@500;700;900&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- الخلفية المتوهجة -->
+  <div class="bg-glow"></div>
+
+  <!-- ============ شاشة البداية ============ -->
+  <section id="start-screen" class="screen active">
+    <div class="start-inner">
+      <div class="logo-badge">؟</div>
+      <h1 class="game-title">من سيربح<br><span class="million">المليون</span></h1>
+      <p class="subtitle">لعبة الأسئلة والأجوائز — 15 سؤالاً تفصلك عن المليون</p>
+      <button id="start-btn" class="btn-primary">ابدأ اللعبة</button>
+      <div class="hint-note">
+        الأسئلة تُولّد حيّاً بواسطة الذكاء الاصطناعي مع تدرّج في الصعوبة
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ شاشة اللعبة ============ -->
+  <section id="game-screen" class="screen">
+    <header class="game-header">
+      <div class="prize-display">
+        <span class="prize-label">الجائزة الحالية</span>
+        <span id="current-prize" class="prize-value">0</span>
+      </div>
+      <div class="lifelines" id="lifelines">
+        <button class="lifeline" id="ll-5050" title="حذف إجابتين" aria-label="حذف إجابتين">
+          <span class="ll-icon">½</span>
+        </button>
+        <button class="lifeline" id="ll-friend" title="الاتصال بصديق" aria-label="الاتصال بصديق">
+          <span class="ll-icon">☎</span>
+        </button>
+        <button class="lifeline" id="ll-audience" title="سؤال الجمهور" aria-label="سؤال الجمهور">
+          <span class="ll-icon">%</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="game-main">
+      <!-- منطقة السؤال والخيارات -->
+      <div class="play-area">
+        <div class="question-card">
+          <div class="question-level">
+            السؤال <span id="q-number">1</span> من 15
+            <span class="difficulty-tag" id="difficulty-tag">سهل</span>
+          </div>
+          <p id="question-text" class="question-text">جارٍ تحميل السؤال…</p>
+        </div>
+
+        <div id="answers" class="answers-grid"></div>
+
+        <!-- لوحة وسيلة المساعدة (نص / نسب التصويت) -->
+        <div id="assist-panel" class="assist-panel hidden"></div>
+      </div>
+
+      <!-- سلم الجوائز -->
+      <aside class="ladder-wrapper">
+        <h3 class="ladder-title">سلم الجوائز</h3>
+        <ol id="prize-ladder" class="prize-ladder"></ol>
+      </aside>
+    </main>
+  </section>
+
+  <!-- ============ شاشة النتيجة ============ -->
+  <section id="end-screen" class="screen">
+    <div class="end-inner">
+      <h2 id="end-title" class="end-title">انتهت اللعبة!</h2>
+      <p id="end-message" class="end-message"></p>
+      <div class="end-prize">
+        <span class="end-prize-label">مجموع ما ربحته</span>
+        <span id="final-prize" class="end-prize-value">0</span>
+      </div>
+      <button id="restart-btn" class="btn-primary">العب مرة أخرى</button>
+    </div>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>
