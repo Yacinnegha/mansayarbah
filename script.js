@@ -1,704 +1,1165 @@
 /* =========================================================
    من سيربح المليون — منطق اللعبة
-   =========================================================
-   تعمل اللعبة فورًا بدون مفتاح API عبر بنك أسئلة احتياطي مدمج.
-   لتفعيل التوليد الحيّ للأسئلة بواسطة الذكاء الاصطناعي، ضع
-   مفتاح OpenAI في المتغير AI_API_KEY بالأسفل (انظر التعليقات
-   في نهاية الملف لشرح كامل وأفضل الممارسات الأمنية).
    ========================================================= */
 
-/* =========================================================
-   ⭐ إعدادات الذكاء الاصطناعي — نظام الفشل المتسلسل (Failover)
-   =========================================================
-   يمكنك وضع ما يصل إلى 3 مزوّدين. عند فشل المزوّد الأول
-   (تجاوز حد الطلبات / خطأ شبكة / صيغة خاطئة) ينتقل تلقائياً
-   إلى الثاني، فإن فشل إلى الثالث، فإن فشل الجميع يُستخدم
-   بنك الأسئلة المحلي. ضع مفاتيحك في API_KEY لكل مزوّد.
-   ========================================================= */
-const AI_CONFIGS = [
-  {
-    // المزوّد الأساسي — Groq
-    name: "Groq",
-    API_KEY: "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",
-    ENDPOINT: "https://api.groq.com/openai/v1/chat/completions",
-    MODEL: "openai/gpt-oss-120b",
-    // Groq لا يدعم frequency_penalty / presence_penalty
-    extraParams: { temperature: 1.0, max_tokens: 300 },
-  },
-  {
-    // المزوّد الاحتياطي الأول — DeepSeek عبر OpenRouter
-    name: "OpenRouter",
-    API_KEY: "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",
-    ENDPOINT: "https://openrouter.ai/api/v1/chat/completions",
-    MODEL: "deepseek/deepseek-chat",
-    // OpenRouter يدعم معظم باراميترات OpenAI
-    extraParams: { temperature: 1.0, top_p: 0.95, frequency_penalty: 0.8, presence_penalty: 0.5, max_tokens: 300 },
-  },
-  {
-  // المزوّد الاحتياطي الثاني — Groq
-    name: "Groq",
-    API_KEY: "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",
-    ENDPOINT: "https://api.groq.com/openai/v1/chat/completions",
-    MODEL: "llama-3.3-70b-versatile",
-    // Groq لا يدعم frequency_penalty / presence_penalty
-    extraParams: { temperature: 1.0, max_tokens: 300 },
-  },
-];
+/* ====== بنك الأسئلة المدمج ====== */
+const QUESTION_BANK = {
+  easy: [
+    { q: "ما عاصمة مصر؟", o: ["القاهرة", "الإسكندرية", "الجيزة", "أسوان"], a: 0, topic: "عواصم ومدن", explanation: "القاهرة هي عاصمة مصر وأكبر مدنها." },
+    { q: "كم عدد القارات في العالم؟", o: ["5", "6", "7", "8"], a: 2, topic: "جغرافيا", explanation: "هناك 7 قارات: آسيا، أفريقيا، أمريكا الشمالية، أمريكا الجنوبية، أنتاركتيكا، أوروبا، أستراليا." },
+    { q: "ما لون السماء في يوم صافٍ؟", o: ["أحمر", "أزرق", "أخضر", "أصفر"], a: 1, topic: "علوم", explanation: "السماء تظهر زرقاء بسبب تشتت ضوء الشمس في الغلاف الجوي." },
+    { q: "كم عدد أيام الأسبوع؟", o: ["5", "6", "7", "8"], a: 2, topic: "معرفة عامة", explanation: "أيام الأسبوع سبعة من السبت إلى الجمعة." },
+    { q: "ما الحيوان الذي يُلقب بملك الغابة؟", o: ["النمر", "الفيل", "الأسد", "الذئب"], a: 2, topic: "حيوانات", explanation: "الأسد يُلقب بملك الغابة لقوته وهيمنته." },
+    { q: "كم عدد ألوان قوس قزح؟", o: ["5", "6", "7", "8"], a: 2, topic: "علوم", explanation: "قوس قزح يحتوي على 7 ألوان: أحمر، برتقالي، أصفر، أخضر، أزرق، نيلي، بنفسجي." },
+    { q: "ما أكبر كوكب في المجموعة الشمسية؟", o: ["الأرض", "المريخ", "المشتري", "زحل"], a: 2, topic: "فضاء", explanation: "المشتري هو أكبر كوكب في المجموعة الشمسية." },
+    { q: "كم عدد فصول السنة؟", o: ["2", "3", "4", "5"], a: 2, topic: "معرفة عامة", explanation: "فصول السنة أربعة: الربيع، الصيف، الخريف، الشتاء." },
+    { q: "ما العضو المسؤول عن ضخ الدم؟", o: ["الرئة", "القلب", "الكبد", "الكلية"], a: 1, topic: "طب", explanation: "القلب يضخ الدم إلى جميع أنحاء الجسم." },
+    { q: "كم عدد لاعبي كرة القدم في الفريق الواحد؟", o: ["9", "10", "11", "12"], a: 2, topic: "رياضة", explanation: "فريق كرة القدم يتكون من 11 لاعباً." },
+    { q: "ما عاصمة فرنسا؟", o: ["لندن", "باريس", "برلين", "مدريد"], a: 1, topic: "عواصم ومدن", explanation: "باريس هي عاصمة فرنسا." },
+    { q: "ما الكوكب الأقرب إلى الشمس؟", o: ["الزهرة", "الأرض", "عطارد", "المريخ"], a: 2, topic: "فضاء", explanation: "عطارد هو الكوكب الأقرب إلى الشمس." },
+    { q: "كم عدد حروف اللغة العربية؟", o: ["26", "28", "30", "32"], a: 1, topic: "لغات", explanation: "اللغة العربية تحتوي على 28 حرفاً." },
+    { q: "ما أكبر محيط في العالم؟", o: ["الأطلسي", "الهندي", "الهادئ", "المتجمد"], a: 2, topic: "بحار ومحيطات", explanation: "المحيط الهادئ هو أكبر محيط في العالم." },
+    { q: "ما ناتج 7 × 8؟", o: ["54", "56", "58", "64"], a: 1, topic: "رياضيات", explanation: "7 × 8 = 56" },
+    { q: "ما لون ورق الشجر؟", o: ["أحمر", "أزرق", "أخضر", "أصفر"], a: 2, topic: "نباتات", explanation: "ورق الشجر أخضر بسبب مادة الكلوروفيل." },
+    { q: "كم عدد أسنان الإنسان البالغ؟", o: ["28", "30", "32", "34"], a: 2, topic: "طب", explanation: "الإنسان البالغ لديه 32 سنّاً بما فيها أضراس العقل." },
+    { q: "ما عاصمة اليابان؟", o: ["سيول", "بكين", "طوكيو", "بانكوك"], a: 2, topic: "عواصم ومدن", explanation: "طوكيو هي عاصمة اليابان." },
+    { q: "في أي قارة تقع مصر؟", o: ["آسيا", "أفريقيا", "أوروبا", "أمريكا"], a: 1, topic: "جغرافيا", explanation: "مصر تقع في قارة أفريقيا." },
+    { q: "ما الحيوان الذي ينتج العسل؟", o: ["الفراشة", "النحلة", "النملة", "الذبابة"], a: 1, topic: "حيوانات", explanation: "النحل ينتج العسل من رحيق الأزهار." },
+    { q: "كم ثانية في الدقيقة؟", o: ["30", "45", "60", "90"], a: 2, topic: "معرفة عامة", explanation: "الدقيقة تحتوي على 60 ثانية." },
+    { q: "ما أكبر دولة عربية من حيث المساحة؟", o: ["مصر", "السعودية", "الجزائر", "السودان"], a: 2, topic: "جغرافيا", explanation: "الجزائر هي أكبر دولة عربية من حيث المساحة." },
+    { q: "ما العملة الرسمية للولايات المتحدة؟", o: ["اليورو", "الجنيه", "الدولار", "الين"], a: 2, topic: "اقتصاد", explanation: "الدولار هو العملة الرسمية للولايات المتحدة." },
+    { q: "كم عدد عظام جسم الإنسان البالغ؟", o: ["186", "206", "226", "246"], a: 1, topic: "طب", explanation: "جسم الإنسان البالغ يحتوي على 206 عظمة." },
+    { q: "ما العضو المسؤول عن التنفس؟", o: ["القلب", "الرئة", "المعدة", "الدماغ"], a: 1, topic: "طب", explanation: "الرئتان مسؤولتان عن تنفس الأكسجين." },
+  ],
+  medium: [
+    { q: "من هو مؤسس الدولة الأموية؟", o: ["عمر بن الخطاب", "معاوية بن أبي سفيان", "عبد الملك بن مروان", "الوليد بن عبد الملك"], a: 1, topic: "تاريخ", explanation: "معاوية بن أبي سفيان أسس الدولة الأموية عام 661م." },
+    { q: "ما أطول نهر في العالم؟", o: ["نهر الأمازون", "نهر النيل", "نهر المسيسيبي", "نهر اليانغتسي"], a: 1, topic: "جغرافيا", explanation: "نهر النيل يُعد أطول نهر في العالم بطول يبلغ 6650 كم." },
+    { q: "في أي عام هبط الإنسان على القمر؟", o: ["1965", "1969", "1972", "1975"], a: 1, topic: "اكتشافات علمية", explanation: "هبط الإنسان على القمر عام 1969 في مهمة أبولو 11." },
+    { q: "من هو مكتشف الجاذبية؟", o: ["أينشتاين", "نيوتن", "غاليليو", "تسلا"], a: 1, topic: "اكتشافات علمية", explanation: "إسحاق نيوتن اكتشف قانون الجاذبية." },
+    { q: "ما أكبر صحراء في العالم؟", o: ["صحراء كالاهاري", "الصحراء الكبرى", "صحراء جوبي", "صحراء أنتاركتيكا"], a: 3, topic: "جغرافيا", explanation: "صحراء أنتاركتيكا هي أكبر صحراء (باردة) في العالم." },
+    { q: "من كتب رواية 'البؤساء'؟", o: ["تولستوي", "فيكتور هوغو", "ديكنز", "دوستويفسكي"], a: 1, topic: "كتب وروايات", explanation: "فيكتور هوغو كتب رواية 'البؤساء' عام 1862." },
+    { q: "ما الرمز الكيميائي للذهب؟", o: ["Go", "Au", "Gd", "Ag"], a: 1, topic: "كيمياء", explanation: "الرمز الكيميائي للذهب هو Au من الكلمة اللاتينية Aurum." },
+    { q: "كم عدد لاعبي كرة السلة في الفريق داخل الملعب؟", o: ["5", "6", "7", "11"], a: 0, topic: "رياضة", explanation: "فريق كرة السلة يتكون من 5 لاعبين داخل الملعب." },
+    { q: "ما عاصمة أستراليا؟", o: ["سيدني", "ملبورن", "كانبرا", "بيرث"], a: 2, topic: "عواصم ومدن", explanation: "كانبرا هي عاصمة أستراليا وليست سيدني كما يظن البعض." },
+    { q: "من رسم لوحة الموناليزا؟", o: ["ميكيلانجيلو", "رافاييل", "ليوناردو دافنشي", "فان جوخ"], a: 2, topic: "فنون", explanation: "ليوناردو دافنشي رسم الموناليزا في القرن 16." },
+    { q: "ما سرعة الضوء تقريباً؟", o: ["300,000 كم/ث", "150,000 كم/ث", "500,000 كم/ث", "1,000,000 كم/ث"], a: 0, topic: "فيزياء", explanation: "سرعة الضوء حوالي 300,000 كيلومتر في الثانية." },
+    { q: "في أي قارة تقع جبال الهيمالايا؟", o: ["أفريقيا", "آسيا", "أوروبا", "أمريكا"], a: 1, topic: "جغرافيا", explanation: "جبال الهيمالايا تقع في قارة آسيا." },
+    { q: "من هو مؤلف مسرحية 'روميو وجولييت'؟", o: ["شكسبير", "موليير", "جوته", "تشيخوف"], a: 0, topic: "أدب", explanation: "ويليام شكسبير ألف روميو وجولييت." },
+    { q: "ما الرمز الكيميائي للماء؟", o: ["CO2", "H2O", "O2", "NaCl"], a: 1, topic: "كيمياء", explanation: "الماء يتكون من ذرتي هيدروجين وذرة أكسجين H2O." },
+    { q: "كم عدد أضلاع المثلث؟", o: ["2", "3", "4", "5"], a: 1, topic: "رياضيات", explanation: "المثلث له 3 أضلاع." },
+    { q: "ما عاصمة كندا؟", o: ["تورنتو", "مونتريال", "أوتاوا", "فانكوفر"], a: 2, topic: "عواصم ومدن", explanation: "أوتاوا هي عاصمة كندا." },
+    { q: "من اخترع المصباح الكهربائي؟", o: ["نيكولا تيسلا", "توماس إديسون", "ألكسندر بيل", "بنجامين فرانكلين"], a: 1, topic: "اختراعات", explanation: "توماس إديسون اخترع المصباح الكهربائي عملياً عام 1879." },
+    { q: "ما أكبر كوكب في المجموعة الشمسية؟", o: ["زحل", "الأرض", "المشتري", "نبتون"], a: 2, topic: "فضاء", explanation: "المشتري هو أكبر كوكب في المجموعة الشمسية." },
+    { q: "كم سنة في القرن الواحد؟", o: ["50", "100", "200", "500"], a: 1, topic: "معرفة عامة", explanation: "القرن يساوي 100 سنة." },
+    { q: "ما المعدن السائل في درجة الحرارة العادية؟", o: ["الحديد", "الزئبق", "النحاس", "الذهب"], a: 1, topic: "كيمياء", explanation: "الزئبق هو المعدن الوحيد السائل في درجة الحرارة العادية." },
+    { q: "أين تقع الأهرامات؟", o: ["الأردن", "مصر", "العراق", "السودان"], a: 1, topic: "معالم سياحية", explanation: "أهرامات الجيزة تقع في مصر." },
+    { q: "من هو القائد الذي فتح القسطنطينية؟", o: ["صلاح الدين", "محمد الفاتح", "هارون الرشيد", "بلاط"], a: 1, topic: "تاريخ", explanation: "محمد الفاتح فتح القسطنطينية عام 1453م." },
+    { q: "ما العملة الرسمية لليابان؟", o: ["اليورو", "الين", "الوون", "اليوان"], a: 1, topic: "اقتصاد", explanation: "الين هو العملة الرسمية لليابان." },
+    { q: "ما عدد لاعبي فريق الكرة الطائرة؟", o: ["5", "6", "7", "11"], a: 1, topic: "رياضة", explanation: "فريق الكرة الطائرة يتكون من 6 لاعبين." },
+    { q: "ما أكبر بحيرة في العالم؟", o: ["بحر الخزر", "البحر الميت", "بحيرة فيكتوريا", "بحيرة سوبيريور"], a: 3, topic: "بحار ومحيطات", explanation: "بحيرة سوبيريور هي أكبر بحيرة مياه عذبة في العالم." },
+    { q: "من مؤلف رواية 'مئة عام من العزلة'؟", o: ["ماركيز", "بورخيس", "لوبوسا", "أليندي"], a: 0, topic: "كتب وروايات", explanation: "غابرييل غارسيا ماركيز ألف مئة عام من العزلة." },
+  ],
+  hard: [
+    { q: "ما اسم العالم الذي وضع النظرية النسبية؟", o: ["نيوتن", "أينشتاين", "بوهر", "هوكينغ"], a: 1, topic: "اكتشافات علمية", explanation: "ألبرت أينشتاين وضع النظرية النسبية عام 1905." },
+    { q: "في أي عام سقطت الأندلس؟", o: ["1453", "1492", "1517", "1609"], a: 1, topic: "تاريخ", explanation: "سقطت غرناطة آخر معاقل المسلمين في الأندلس عام 1492م." },
+    { q: "ما أعمق نقطة في المحيطات؟", o: ["خندق بورتوريكو", "خندق ماريانا", "خندق جاوة", "خندق تونغا"], a: 1, topic: "بحار ومحيطات", explanation: "خندق ماريانا هو أعمق نقطة في المحيطات عند 11 كم تقريباً." },
+    { q: "من هو مؤلف كتاب 'الأمير'؟", o: ["ماكيافيلي", "هوبز", "لوك", "روسو"], a: 0, topic: "كتب وروايات", explanation: "نيكولو ماكيافيلي ألف كتاب 'الأمير' عام 1513." },
+    { q: "ما الرمز الكيميائي للفضة؟", o: ["Si", "Ag", "Sv", "Ar"], a: 1, topic: "كيمياء", explanation: "الرمز الكيميائي للفضة هو Ag من الكلمة اللاتينية Argentum." },
+    { q: "كم عدد رقع رقعة الشطرنج؟", o: ["49", "64", "81", "100"], a: 1, topic: "معرفة عامة", explanation: "رقعة الشطرنج تتكون من 64 مربعاً (8×8)." },
+    { q: "ما أطول سلسلة جبال في العالم؟", o: ["جبال روكي", "جبال الأنديز", "جبال الهيمالايا", "جبال الألب"], a: 1, topic: "جغرافيا", explanation: "جبال الأنديز هي أطول سلسلة جبال في العالم بطول 7000 كم." },
+    { q: "من هو مكتشف البنسلين؟", o: ["لويس باستور", "ألكسندر فليمنغ", "روبرت كوخ", "إدوارد جينر"], a: 1, topic: "اكتشافات علمية", explanation: "ألكسندر فليمنغ اكتشف البنسلين عام 1928." },
+    { q: "ما مساحة إفريقيا تقريباً؟", o: ["20 مليون كم²", "30 مليون كم²", "40 مليون كم²", "50 مليون كم²"], a: 1, topic: "جغرافيا", explanation: "مساحة أفريقيا حوالي 30 مليون كيلومتر مربع." },
+    { q: "من رسم لوحة 'الليلة المرصعة بالنجوم'؟", o: ["بيكاسو", "فان جوخ", "مونيه", "سيزان"], a: 1, topic: "فنون", explanation: "فينسنت فان جوخ رسم 'الليلة المرصعة بالنجوم' عام 1889." },
+    { q: "ما أصغر دولة في العالم من حيث المساحة؟", o: ["موناكو", "الفاتيكان", "سان مارينو", "مالطا"], a: 1, topic: "جغرافيا", explanation: "الفاتيكان هي أصغر دولة في العالم بمساحة 0.44 كم²." },
+    { q: "في أي عام بدأت الحرب العالمية الأولى؟", o: ["1912", "1914", "1916", "1918"], a: 1, topic: "تاريخ", explanation: "بدأت الحرب العالمية الأولى عام 1914." },
+    { q: "ما اسم أول قمر صناعي أُطلق للفضاء؟", o: ["أبولو", "سبوتنيك", "فوياجر", "هابل"], a: 1, topic: "فضاء", explanation: "سبوتنيك 1 كان أول قمر صناعي أطلقه الاتحاد السوفيتي عام 1957." },
+    { q: "من هو مؤلف 'الجمهورية'؟", o: ["أرسطو", "أفلاطون", "سقراط", "هوميروس"], a: 1, topic: "فلسفة", explanation: "أفلاطون ألف كتاب 'الجمهورية' عن الدولة العادلة." },
+    { q: "ما العدد الذري للأكسجين؟", o: ["6", "7", "8", "9"], a: 2, topic: "كيمياء", explanation: "العدد الذري للأكسجين هو 8." },
+    { q: "كم عدد دول الاتحاد الأوروبي (تقريباً)؟", o: ["22", "27", "32", "35"], a: 1, topic: "سياسة", explanation: "الاتحاد الأوروبي يضم 27 دولة عضو." },
+    { q: "ما اسم الجسر الذي يربط آسيا بأمريكا الشمالية جغرافياً؟", o: ["جسر البوسفور", "مضيق بيرينغ", "قناة بنما", "مضيق جبل طارق"], a: 1, topic: "جغرافيا", explanation: "مضيق بيرينغ يفصل بين آسيا وأمريكا الشمالية." },
+    { q: "من هو قائد ثورة كوبا؟", o: ["تشي جيفارا", "فيدل كاسترو", "هوغو تشافيز", "زاباتا"], a: 1, topic: "شخصيات تاريخية", explanation: "فيدل كاسترو قاد الثورة الكوبية عام 1959." },
+    { q: "ما اسم الحضارة التي بنت مدينة Machu Picchu؟", o: ["المايا", "الإنكا", "الأزتيك", "الأولمك"], a: 1, topic: "حضارات قديمة", explanation: "حضارة الإنكا بنت Machu Picchu في بيرو." },
+    { q: "ما أصل كلمة 'الجبر' في الرياضيات؟", o: ["إغريقي", "عربي", "هندي", "فارسي"], a: 1, topic: "رياضيات", explanation: "كلمة الجبر من كتاب 'الجبر والمقابلة' للعالم محمد بن موسى الخوارزمي." },
+    { q: "ما لغة البرمجة الأقدم بين التالية؟", o: ["Python", "C", "Fortran", "Java"], a: 2, topic: "تكنولوجيا", explanation: "Fortran ظهرت عام 1957 وهي أقدم من C و Python و Java." },
+    { q: "كم عدد أعمال سيدنا سليمان حسب التراث؟", o: ["100", "300", "500", "700"], a: 1, topic: "دين", explanation: "حسب التراث، لسليمان 300 ملك و 700 سرية." },
+    { q: "ما أكبر شبه جزيرة في العالم؟", o: ["شبه الجزيرة العربية", "شبه الجزيرة الهندية", "شبه الجزيرة الإسكندنافية", "شبه جزيرة كامتشاتكا"], a: 0, topic: "جغرافيا", explanation: "شبه الجزيرة العربية هي أكبر شبه جزيرة في العالم." },
+    { q: "ما اسم العاصمة البيزنطية قبل أن تصبح إسطنبول؟", o: ["روما", "القسطنطينية", "أثينا", "أنقرة"], a: 1, topic: "تاريخ", explanation: "كانت تُسمى القسطنطينية قبل أن تصبح إسطنبول." },
+    { q: "ما اسم المضيق الذي يربط البحر الأبيض المتوسط بالمحيط الأطلسي؟", o: ["مضيق هرمز", "مضيق جبل طارق", "مضيق البوسفور", "مضيق باب المندب"], a: 1, topic: "بحار ومحيطات", explanation: "مضيق جبل طارق يربط المتوسط بالأطلسي." },
+  ],
+  expert: [
+    { q: "ما اسم العالم الذي اكتشف الراديوم؟", o: ["ماري كوري", "ألبرت أينشتاين", "إرنست رذرفورد", "نيلز بور"], a: 0, topic: "اكتشافات علمية", explanation: "ماري كوري اكتشفت الراديوم والبولونيوم وحصلت على نوبل مرتين." },
+    { q: "في أي عام تأسست الأمم المتحدة؟", o: ["1939", "1945", "1949", "1955"], a: 1, topic: "سياسة", explanation: "تأسست الأمم المتحدة عام 1945 بعد الحرب العالمية الثانية." },
+    { q: "من هو مؤلف رواية 'الحرب والسلام'؟", o: ["ديكنز", "تولستوي", "دوستويفسكي", "تورغينيف"], a: 1, topic: "كتب وروايات", explanation: "ليو تولستوي ألف 'الحرب والسلام' عام 1869." },
+    { q: "ما اسم أصغر كوكب في المجموعة الشمسية؟", o: ["عطارد", "المريخ", "بلوتو", "الزهرة"], a: 0, topic: "فضاء", explanation: "عطارد هو أصغر كوكب في المجموعة الشمسية." },
+    { q: "ما اسم المعركة التي انتصر فيها صلاح الدين على الصليبيين؟", o: ["عين جالوت", "حطين", "القادسية", "اليرموك"], a: 1, topic: "تاريخ", explanation: "معركة حطين عام 1187 انتصر فيها صلاح الدين على الصليبيين." },
+    { q: "ما سرعة دوران الأرض حول محورها عند خط الاستواء؟", o: ["≈ 465 م/ث", "≈ 1000 م/ث", "≈ 100 م/ث", "≈ 3000 م/ث"], a: 0, topic: "فلك", explanation: "تدور الأرض بسرعة ~465 متر/ثانية عند خط الاستواء." },
+    { q: "من هو الفيلسوف صاحب مقولة 'أعرف أنني لا أعرف'؟", o: ["أفلاطون", "سقراط", "أرسطو", "ديكارت"], a: 1, topic: "فلسفة", explanation: "سقراط قال 'أعرف أنني لا أعرف شيئاً'." },
+    { q: "ما اسم أصغر وحدة في المادة؟", o: ["الجزيء", "الذرة", "الكوارك", "الإلكترون"], a: 2, topic: "فيزياء", explanation: "الكوارك هو أصغر وحدة معروفة في المادة، ويتكون منها البروتون والنيوترون." },
+    { q: "ما اسم أعلى قمة جبلية في العالم؟", o: ["K2", "إفرست", "كانشنجونغا", "أنابورنا"], a: 1, topic: "جغرافيا", explanation: "قمة إفرست هي أعلى قمة في العالم بارتفاع 8848 متراً." },
+    { q: "كم عدد ركعات صلاة الكسوف؟", o: ["2", "4", "6", "8"], a: 0, topic: "دين", explanation: "صلاة الكسوف ركعتان بركوعين وسجودين في كل ركعة." },
+    { q: "ما اسم الفيزيائي الذي اكتشف الإشعاع الكهرومغناطيسي؟", o: ["ماكسويل", "هيرتز", "فاراداي", "تسلا"], a: 1, topic: "اكتشافات علمية", explanation: "هاينريش هيرتز أثبت وجود الموجات الكهرومغناطيسية." },
+    { q: "في أي عام سقطت الإمبراطورية العثمانية؟", o: ["1908", "1918", "1922", "1924"], a: 2, topic: "تاريخ", explanation: "انتهت الخلافة العثمانية رسمياً عام 1922 وأُلغيت عام 1924." },
+    { q: "ما اسم أصغر دولة عربية من حيث عدد السكان؟", o: ["البحرين", "جزر القمر", "قطر", "جيبوتي"], a: 0, topic: "جغرافيا", explanation: "البحرين هي أصغر دولة عربية من حيث عدد السكان." },
+    { q: "ما اسم المركب الكيميائي المسؤول عن طعم الليمون الحامض؟", o: ["الأسيتيك", "الستريك", "الملحي", "الفورميك"], a: 1, topic: "كيمياء", explanation: "حمض الستريك هو المسؤول عن طعم الليمون الحامض." },
+    { q: "من هو مؤلف موسيقى 'السيمفونية التاسعة'؟", o: ["موتسارت", "بيتهوفن", "باخ", "تشايكوفسكي"], a: 1, topic: "موسيقى", explanation: "لودفيج فان بيتهوفن ألف السيمفونية التاسعة." },
+    { q: "ما اسم أول رائد فضاء مشى على القمر؟", o: ["يوري غاغارين", "نيل أرمسترونغ", "باز ألدرين", "مايكل كولينز"], a: 1, topic: "فضاء", explanation: "نيل أرمسترونغ أول من مشى على القمر عام 1969." },
+    { q: "ما اسم العالم الذي اكتشف الدورة الدموية؟", o: ["جالينوس", "ابن النفيس", "هارفي", "أبقراط"], a: 2, topic: "اكتشافات علمية", explanation: "وليام هارفي اكتشف الدورة الدموية الكبرى (وابن النفيس سبقه بالصغرى)." },
+    { q: "كم عدد أبواب الجنة حسب التراث الإسلامي؟", o: ["4", "6", "8", "12"], a: 2, topic: "دين", explanation: "للجنة 8 أبواب حسب التراث الإسلامي." },
+    { q: "ما اسم أقدم جامعة في العالم؟", o: ["الأزهر", "القرويين", "بولونيا", "أكسفورد"], a: 1, topic: "تاريخ", explanation: "جامعة القرويين في المغرب أسسها فاطمة الفهرية عام 859م." },
+    { q: "ما اسم النهر الذي يمر بأكبر عدد من العواصم؟", o: ["النيل", "الدانوب", "الراين", "الأمازون"], a: 1, topic: "جغرافيا", explanation: "نهر الدانوب يمر بـ 4 عواصم أوروبية: فيينا، براتيسلافا، بودابست، بلغراد." },
+    { q: "من هو العالم العربي صاحب كتاب 'القانون في الطب'؟", o: ["ابن سينا", "الرازي", "ابن النفيس", "الزهراوي"], a: 0, topic: "طب", explanation: "ابن سينا ألف 'القانون في الطب' الذي ظل مرجعاً لأوروبا لقرون." },
+    { q: "ما اسم أصغر جسيم في الكون حسب النموذج المعياري؟", o: ["الإلكترون", "الفوتون", "الكوارك", "النيوترينو"], a: 2, topic: "فيزياء", explanation: "الكواركات من أصغر الجسيمات المعروفة ضمن النموذج المعياري." },
+    { q: "في أي عام انتهت الحرب الباردة تقريباً؟", o: ["1985", "1989", "1991", "1995"], a: 2, topic: "تاريخ", explanation: "انتهت الحرب الباردة بتفكك الاتحاد السوفيتي عام 1991." },
+    { q: "ما اسم العالم الذي طوّر نظرية الكم؟", o: ["بور", "هايزنبرغ", "بلانك", "شرودنغر"], a: 2, topic: "فيزياء", explanation: "ماكس بلانك وضع أسس نظرية الكم عام 1900." },
+    { q: "كم عدد سور القرآن الكريم؟", o: ["100", "114", "120", "130"], a: 1, topic: "دين", explanation: "عدد سور القرآن الكريم 114 سورة." },
+  ],
+};
 
-// المهلة الزمنية لكل طلب (بالمللي ثانية) قبل اعتباره فاشلاً والانتقال للتالي
-const AI_TIMEOUT_MS = 12000;
+/* ====== أوضاع اللعبة ====== */
+const CLASSIC_PRIZES = [1000, 2000, 3000, 5000, 8000, 16000, 32000, 64000, 125000, 250000, 500000, 1000000, 2000000, 3000000, 5000000];
+const MARATHON_PRIZES = [500,1000,2000,3000,5000,7000,10000,15000,20000,25000,35000,50000,70000,100000,150000,200000,300000,400000,550000,700000,900000,1200000,1600000,2100000,2700000,3500000,4500000,6000000,8000000,10000000];
 
-// عدد المحاولات لكل مزوّد قبل الانتقال للتالي (لتفادي الأسئلة المكررة)
-const AI_MAX_ATTEMPTS = 3;
+const MODES = {
+  classic: {
+    id: "classic", name: "كلاسيكي", description: "اللعبة الأصلية بـ 15 سؤالاً ووسائل مساعدة، طريقك للمليون",
+    icon: "💰", color: "linear-gradient(135deg, #f59e0b, #d97706)",
+    totalQuestions: 15, hasLifelines: true, hasTimer: false, timerSeconds: 0,
+    allowWalkAway: true, mistakes: 0,
+    prizes: CLASSIC_PRIZES, safeLevels: [4, 8, 11],
+    rules: ["15 سؤالاً بصعوبة متدرجة من السهل للخبير", "ثلاث مراحل أمان: عند السؤال 5 و9 و12 تضمن المبلغ", "وسائل مساعدة: 50:50، الاتصال بصديق، رأي الجمهور، استبدال السؤال، الإجابة المزدوجة", "يمكنك الانسحاب في أي وقت والاحتفاظ بما ربحت", "الجائزة الكبرى: 5,000,000"],
+  },
+  endless: {
+    id: "endless", name: "لانهائي", description: "أسئلة لا تنتهي بصعوبة متزايدة، كم سؤالاً تستطيع إجابته؟",
+    icon: "♾️", color: "linear-gradient(135deg, #8b5cf6, #d946ef)",
+    totalQuestions: 0, hasLifelines: true, hasTimer: false, timerSeconds: 0,
+    allowWalkAway: false, mistakes: 0,
+    prizes: [], safeLevels: [],
+    rules: ["أسئلة لا نهائية حتى تخطئ", "كل 5 أسئلة ترتفع الصعوبة", "أعلى عدد من الإجابات الصحيحة يُسجّل كأفضل نتيجة", "وسائل المساعدة متاحة مرة واحدة", "يمكنك العودة للقائمة الرئيسية في أي وقت"],
+  },
+  survival: {
+    id: "survival", name: "بقاء", description: "3 أرواح فقط، أخطاؤك تُحوّل إلى نقاط تعليمي. تستطيع الاستمرار",
+    icon: "🛡️", color: "linear-gradient(135deg, #10b981, #14b8a6)",
+    totalQuestions: 0, hasLifelines: false, hasTimer: true, timerSeconds: 45,
+    allowWalkAway: false, mistakes: 3,
+    prizes: [], safeLevels: [],
+    rules: ["تبدأ بـ 3 أرواح (قلوب)", "كل إجابة خاطئة أو انتهاء وقت يخصم قلباً", "كل 10 إجابات صحيحة تستعيد قلباً (بحد أقصى 3)", "اللعبة تنتهي عند نفاد الأرواح", "النقاط = عدد الإجابات الصحيحة × 100", "يمكنك العودة للقائمة الرئيسية في أي وقت"],
+  },
+  marathon: {
+    id: "marathon", name: "ماراثون", description: "30 سؤالاً، أصعب رحلة في تاريخ اللعبة بجوائز ضخمة",
+    icon: "🏆", color: "linear-gradient(135deg, #f43f5e, #f97316)",
+    totalQuestions: 30, hasLifelines: true, hasTimer: true, timerSeconds: 60,
+    allowWalkAway: true, mistakes: 0,
+    prizes: MARATHON_PRIZES, safeLevels: [4, 9, 14, 19, 24],
+    rules: ["30 سؤالاً — أطول تحدٍّ على الإطلاق", "60 ثانية لكل سؤال", "5 مراحل أمان للوصول لجائزة 10,000,000", "وسائل المساعدة: مرة واحدة لكل نوع", "فقط للأبطال الذين لا يستسلمون!"],
+  },
+};
 
-// بنك المواضيع المتنوّع — يُختار عشوائياً في كل طلب لإجبار النموذج
-// على عدم تكرار نفس السؤال (خاصة مع النماذج الصغيرة مثل Llama-3.1-8b)
+const LETTERS = ["أ", "ب", "ج", "د"];
+
+/* ====== الحالة ====== */
+let state = {
+  screen: "menu",
+  selectedMode: null,
+  currentIndex: 0,
+  question: null,
+  loading: false,
+  locked: false,
+  lifelines: { fifty: true, friend: true, audience: true, switch: true, double: true },
+  mistakes: 0,
+  streak: 0,
+  bestStreak: 0,
+  totalCorrect: 0,
+  usedSwitchThisQuestion: false,
+  usedDoubleThisQuestion: false,
+  askedQuestions: new Set(),
+  awaitingNext: false,
+  doubleRetryMode: false,
+  selectedIndex: null,
+  revealed: false,
+  eliminatedIndices: [],
+  soundEnabled: true,
+  timerInterval: null,
+  timerRemaining: 0,
+  apiKey: "",
+  lastResult: null,
+};
+
+/* ====== الإحصائيات (localStorage) ====== */
+function loadStats() {
+  try {
+    const raw = localStorage.getItem("millionaire_stats");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {
+    gamesPlayed: 0, gamesWon: 0, totalWinnings: 0,
+    bestClassicPrize: 0, bestEndlessScore: 0, bestStreak: 0,
+    totalCorrect: 0, totalQuestions: 0, fastestAnswer: 0,
+    perfectGames: 0, lastPlayed: 0, dailyStreak: 0, lastPlayDate: "",
+  };
+}
+
+function saveStats(stats) {
+  try { localStorage.setItem("millionaire_stats", JSON.stringify(stats)); } catch {}
+}
+
+function loadApiKey() {
+  try { state.apiKey = localStorage.getItem("millionaire_api_key") || ""; } catch {}
+}
+
+function saveApiKeyToStorage(key) {
+  state.apiKey = key;
+  try { localStorage.setItem("millionaire_api_key", key); } catch {}
+}
+
+function loadSoundPref() {
+  try {
+    const v = localStorage.getItem("millionaire_sound");
+    if (v !== null) state.soundEnabled = v === "1";
+  } catch {}
+}
+
+function saveSoundPref() {
+  try { localStorage.setItem("millionaire_sound", state.soundEnabled ? "1" : "0"); } catch {}
+}
+
+/* ====== المؤثرات الصوتية (Web Audio API) ====== */
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+  }
+  return audioCtx;
+}
+
+function playTone(freq, duration, type = "sine", volume = 0.15) {
+  if (!state.soundEnabled) return;
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch {}
+}
+
+const sounds = {
+  click: () => playTone(600, 0.05, "sine", 0.1),
+  select: () => playTone(440, 0.1, "sine", 0.12),
+  correct: () => { playTone(523, 0.12); setTimeout(() => playTone(659, 0.12), 120); setTimeout(() => playTone(784, 0.2), 240); },
+  wrong: () => { playTone(311, 0.15, "sawtooth", 0.1); setTimeout(() => playTone(233, 0.3, "sawtooth", 0.1), 150); },
+  next: () => playTone(880, 0.1, "sine", 0.1),
+  safe: () => { playTone(659, 0.1); setTimeout(() => playTone(880, 0.15), 100); },
+  lifeline: () => { playTone(698, 0.08); setTimeout(() => playTone(523, 0.12), 80); },
+  loseLife: () => playTone(200, 0.3, "sawtooth", 0.1),
+  win: () => { playTone(523, 0.1); setTimeout(() => playTone(659, 0.1), 100); setTimeout(() => playTone(784, 0.1), 200); setTimeout(() => playTone(1047, 0.4), 300); },
+  walkaway: () => playTone(440, 0.2, "sine", 0.1),
+  tick: () => playTone(1000, 0.03, "square", 0.05),
+  recover: () => { playTone(659, 0.08); setTimeout(() => playTone(880, 0.12), 80); },
+};
+
+/* ====== تنقل الشاشات ====== */
+function showScreen(name) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  const el = document.getElementById("screen-" + name);
+  if (el) el.classList.add("active");
+  state.screen = name;
+  sounds.click();
+
+  if (name === "stats") renderStats();
+  if (name === "modes") renderModes();
+  if (name === "settings") renderSettings();
+}
+
+/* ====== اختيار الوضع ====== */
+function renderModes() {
+  const grid = document.getElementById("modes-grid");
+  grid.innerHTML = "";
+  Object.values(MODES).forEach(mode => {
+    const card = document.createElement("div");
+    card.className = "mode-card";
+    card.style.borderTop = `4px solid transparent`;
+    card.style.background = `var(--bg-card)`;
+    card.innerHTML = `
+      <div class="mode-icon">${mode.icon}</div>
+      <div class="mode-name">${mode.name}</div>
+      <div class="mode-desc">${mode.description}</div>
+    `;
+    card.onclick = () => showRules(mode.id);
+    grid.appendChild(card);
+  });
+}
+
+function showRules(modeId) {
+  const mode = MODES[modeId];
+  state.selectedMode = modeId;
+  document.getElementById("rules-title").textContent = `${mode.icon} ${mode.name}`;
+  const content = document.getElementById("rules-content");
+  content.innerHTML = `
+    <h3>قواعد وضع ${mode.name}</h3>
+    <ul>${mode.rules.map(r => `<li>${r}</li>`).join("")}</ul>
+  `;
+  showScreen("rules");
+}
+
+function startSelectedMode() {
+  if (!state.selectedMode) return;
+  startGame(state.selectedMode);
+}
+
+/* ====== بدء اللعبة ====== */
+function defaultLifelines(hasLifelines) {
+  if (!hasLifelines) return { fifty: false, friend: false, audience: false, switch: false, double: false };
+  return { fifty: true, friend: true, audience: true, switch: true, double: true };
+}
+
+function startGame(modeId) {
+  const mode = MODES[modeId];
+  state.selectedMode = modeId;
+  state.currentIndex = 0;
+  state.question = null;
+  state.loading = true;
+  state.locked = false;
+  state.lifelines = defaultLifelines(mode.hasLifelines);
+  state.mistakes = 0;
+  state.streak = 0;
+  state.bestStreak = 0;
+  state.totalCorrect = 0;
+  state.usedSwitchThisQuestion = false;
+  state.usedDoubleThisQuestion = false;
+  state.askedQuestions = new Set();
+  state.awaitingNext = false;
+  state.doubleRetryMode = false;
+  state.selectedIndex = null;
+  state.revealed = false;
+  state.eliminatedIndices = [];
+
+  // إعدادات الرأس
+  document.getElementById("game-mode-name").textContent = `${mode.icon} ${mode.name}`;
+  document.getElementById("prize-chip").style.display = mode.prizes.length > 0 ? "" : "none";
+  document.getElementById("lives-chip").style.display = mode.mistakes > 0 ? "" : "none";
+  document.getElementById("score-chip").style.display = mode.id === "endless" || mode.id === "survival" ? "" : "none";
+  document.getElementById("walkaway-btn").style.display = mode.allowWalkAway ? "" : "none";
+  document.getElementById("exit-menu-btn").style.display = (mode.totalQuestions === 0) ? "" : "none";
+
+  renderPrizeLadder();
+  renderLifelines();
+  showScreen("playing");
+  loadQuestion();
+}
+
+/* ====== توليد السؤال ====== */
+function getDifficultyFromIndex(index, total) {
+  if (total === 0) {
+    if (index < 5) return "easy";
+    if (index < 12) return "medium";
+    if (index < 22) return "hard";
+    return "expert";
+  }
+  const ratio = index / total;
+  if (ratio < 0.33) return "easy";
+  if (ratio < 0.55) return "medium";
+  if (ratio < 0.78) return "hard";
+  return "expert";
+}
+
+function normalizeQuestion(text) {
+  return (text || "").toLowerCase()
+    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
+    .replace(/[إأآا]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[؟!.,،؛:"'()\[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getFallbackQuestion(difficulty, askedSet) {
+  const bank = QUESTION_BANK[difficulty];
+  // ابحث عن سؤال غير مكرر
+  const available = bank.filter(q => !askedSet.has(normalizeQuestion(q.q)));
+  const pool = available.length > 0 ? available : bank;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 const TOPICS = [
   "جغرافيا", "تاريخ", "علوم", "رياضيات", "أدب", "فنون",
   "رياضة", "دين", "تكنولوجيا", "فضاء", "طب", "حيوانات",
   "نباتات", "طعام", "موسيقى", "أفلام", "لغات", "اقتصاد",
   "سياسة", "فلسفة", "كيمياء", "فيزياء", "فلك", "بحار ومحيطات",
   "حضارات قديمة", "شخصيات تاريخية", "عواصم ومدن", "معالم سياحية",
-  "اختراعات", "اكتشافات علمية", "أساطير", "كتب وروايات",
+  "اختراعات", "اكتشافات علمية", "كتب وروايات",
 ];
 
-// القالب المشترك لكل المزوّدين
-const AI_SYSTEM_PROMPT =
-  "أنت مولّد أسئلة محترف للعبة 'من سيربح المليون' باللغة العربية. " +
-  "كل سؤال يجب أن يكون فريداً ومختلفاً عن أي سؤال سابق. " +
-  "أعطِ الإجابة دائماً بصيغة JSON صارمة فقط بدون أي نص إضافي.";
+async function fetchQuestionFromAI(index, total) {
+  if (!state.apiKey) return null;
 
-function buildAIPrompt(difficulty, topic) {
-  return `ولّد سؤالاً ثقافياً واحداً حول موضوع: «${topic}»
-بمستوى صعوبة: ${difficultyLabel(difficulty)} (لعبة من سيربح المليون).
+  const difficulty = getDifficultyFromIndex(index, total);
+  const diffLabel = { easy: "سهل", medium: "متوسط", hard: "صعب", expert: "خبير" }[difficulty];
+  const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
 
-الشروط:
-- سؤال أصلي ومختلف عن أي سؤال آخر.
-- 4 خيارات متقاربة ومنطقية، إجابة صحيحة واحدة فقط.
-- تجنّب الأسئلة المحفوظة سابقاً قدر الإمكان.
-
-أعطِ النتيجة بصيغة JSON فقط بالشكل التالي:
-{"question":"نص السؤال","options":["الخيار1","الخيار2","الخيار3","الخيار4"],"answerIndex":0}`;
-}
-
-/* ---------- إعدادات اللعبة ---------- */
-const PRIZES = [
-  1000, 2000, 3000, 5000, 8000,           // سهل   (1-5)
-  16000, 32000, 64000,                    // متوسط (6-8)
-  125000, 250000, 500000,                 // صعب   (9-11)
-  1000000, 2000000, 3000000, 5000000,     // خبير  (12-15)
-];
-// مراحل الأمان (ضمان الجائزة عند الوصول لها)
-const SAFE_LEVELS = [4, 8, 11]; // الفهارس (0-based) لـ 5000 ، 64000 ، 500000
-const TOTAL_QUESTIONS = PRIZES.length; // 15
-
-/* ---------- بنك الأسئلة الاحتياطي (تُستخدم عند غياب API) ---------- */
-const FALLBACK_QUESTIONS = {
-  easy: [
-    { q: "كم عدد ألوان قوس قزح؟", o: ["5", "7", "9", "12"], a: 1 },
-    { q: "ما عاصمة مصر؟", o: ["القاهرة", "تونس", "الدوحة", "بغداد"], a: 0 },
-    { q: "كم عدد أيام الأسبوع؟", o: ["5", "6", "7", "8"], a: 2 },
-    { q: "ما لون السماء في النهار الصافي؟", o: ["أخضر", "أزرق", "أحمر", "أسود"], a: 1 },
-    { q: "كم عدد أرجل العنكبوت؟", o: ["6", "8", "10", "4"], a: 1 },
-    { q: "ما العضو المسؤول عن ضخ الدم؟", o: ["الكبد", "الرئة", "القلب", "الكلية"], a: 2 },
-    { q: "كم ثانية في الدقيقة؟", o: ["30", "45", "60", "100"], a: 2 },
-    { q: "ما الحيوان الذي يُلقب بسيد الغابة؟", o: ["النمر", "الفيل", "الأسد", "الذئب"], a: 2 },
-  ],
-  medium: [
-    { q: "في أي عام بدأت الحرب العالمية الأولى؟", o: ["1912", "1914", "1916", "1918"], a: 1 },
-    { q: "من مؤلف رواية 'البؤساء'؟", o: ["ديكنز", "تولستوي", "فيكتور هوغو", "شكسبير"], a: 2 },
-    { q: "ما أطول نهر في العالم؟", o: ["النيل", "الأمازون", "اليانغتسي", "المسيسيبي"], a: 0 },
-    { q: "ما العنصر الكيميائي رمزه Au؟", o: ["الفضة", "الذهب", "النحاس", "الحديد"], a: 1 },
-    { q: "كم عدد كواكب المجموعة الشمسية؟", o: ["7", "8", "9", "10"], a: 1 },
-    { q: "من رسم لوحة الموناليزا؟", o: ["فان جوخ", "بيكاسو", "دافنشي", "مايكل أنجلو"], a: 2 },
-    { q: "ما عاصمة كندا؟", o: ["تورنتو", "مونتريال", "أوتاوا", "فانكوفر"], a: 2 },
-  ],
-  hard: [
-    { q: "ما العالم الذي صاغ نظرية النسبية العامة؟", o: ["نيوتن", "أينشتاين", "بور", "هوكينغ"], a: 1 },
-    { q: "ما السنة التي هبط فيها الإنسان على القمر؟", o: ["1965", "1969", "1972", "1958"], a: 1 },
-    { q: "ما أعمق خندق محيطي في العالم؟", o: ["خندق بورتوريكو", "خندق ماريانا", "خندق اليابان", "خندق ساندويتش"], a: 1 },
-    { q: "من ألّف كتاب 'الأمير' في السياسة؟", o: ["أفلاطون", "مكيافيلي", "هوبز", "روسو"], a: 1 },
-    { q: "ما لغة البرمجة التي طوّرها غيدو فان روسم؟", o: ["Ruby", "Python", "Java", "Go"], a: 1 },
-    { q: "ما العدد الذرّي للكربون؟", o: ["4", "6", "8", "12"], a: 1 },
-    { q: "في أي دولة تقع مدينة 'كوسكو' التاريخية؟", o: ["بوليفيا", "البيرو", "الإكوادور", "تشيلي"], a: 1 },
-  ],
-  expert: [
-    { q: "ما مقدار ثابت بلانك مقرّباً (بجول·ثانية)؟", o: ["6.6×10⁻³⁴", "3×10⁸", "9.8", "1.6×10⁻¹⁹"], a: 0 },
-    { q: "من الحائز على جائزة نوبل للفيزياء عام 1921؟", o: ["بور", "أينشتاين", "كوري", "بلانك"], a: 1 },
-    { q: "ما اسم أصغر وحدة بنية في الحاسوب الكمومي؟", o: ["البِت", "الترانزستور", "الكيوبِت", "النانو"], a: 2 },
-    { q: "ما العالم الذي اكتشف البنسلين؟", o: ["باستور", "فليمنغ", "كوخ", "ليشمان"], a: 1 },
-    { q: "في أي عام سقطت الأندلس (غرناطة)؟", o: ["1453", "1492", "1517", "1500"], a: 1 },
-    { q: "ما أطول عظمة في جسم الإنسان؟", o: ["الظنبوب", "عظم الفخذ", "الزند", "العضد"], a: 1 },
-  ],
-};
-
-/* =========================================================
-   حالة اللعبة
-   ========================================================= */
-const state = {
-  currentIndex: 0,
-  question: null,
-  locked: false,           // منع النقر المزدوج أثناء الأنيميشن
-  lifelines: { fifty: true, friend: true, audience: true },
-  usedFallbackIndices: { easy: [], medium: [], hard: [], expert: [] },
-  nextQuestionPromise: null, // وعد السؤال التالي (للـ prefetch)
-  askedQuestions: new Set(),  // ⭐ تخزين الأسئلة المطروقة لمنع التكرار
-};
-
-/* =========================================================
-   اختصارات DOM
-   ========================================================= */
-const $ = (id) => document.getElementById(id);
-const els = {
-  startScreen: $("start-screen"),
-  gameScreen: $("game-screen"),
-  endScreen: $("end-screen"),
-  startBtn: $("start-btn"),
-  restartBtn: $("restart-btn"),
-  currentPrize: $("current-prize"),
-  qNumber: $("q-number"),
-  qText: $("question-text"),
-  difficultyTag: $("difficulty-tag"),
-  answers: $("answers"),
-  assistPanel: $("assist-panel"),
-  ladder: $("prize-ladder"),
-  ll5050: $("ll-5050"),
-  llFriend: $("ll-friend"),
-  llAudience: $("ll-audience"),
-  endTitle: $("end-title"),
-  endMessage: $("end-message"),
-  finalPrize: $("final-prize"),
-};
-
-/* =========================================================
-   مساعدات عامة
-   ========================================================= */
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function getDifficulty(index) {
-  if (index < 5)  return "easy";
-  if (index < 8)  return "medium";
-  if (index < 11) return "hard";
-  return "expert";
-}
-
-function difficultyLabel(d) {
-  return { easy: "سهل", medium: "متوسط", hard: "صعب", expert: "خبير" }[d];
-}
-
-function formatNumber(n) {
-  return n.toLocaleString("en-US");
-}
-
-/* ⭐ تطبيع نص السؤال لمقارنة التشابه ومنع التكرار
-   يُزيل التشكيل والمسافات الزائدة وعلامات الترقيم ويوحّد الحالة،
-   فيميّز أن "ما هي عاصمة مصر؟" و"ماهي عاصمة مصر" هما نفس السؤال. */
-function normalizeQuestion(text) {
-  return (text || "")
-    .toLowerCase()
-    // إزالة التشكيل العربي
-    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
-    // توحيد أشكال الهمزات والألف
-    .replace(/[إأآا]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/ة/g, "ه")
-    // إزالة علامات الترقيم والمسافات الزائدة
-    .replace(/[؟!.,،؛:"'()\[\]{}]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// هل السؤال مكرّر (مطروق سابقاً)؟
-function isDuplicate(text) {
-  return state.askedQuestions.has(normalizeQuestion(text));
-}
-
-// تسجيل سؤال كـ "مطروق" لمنع تكراره لاحقاً
-function rememberQuestion(text) {
-  state.askedQuestions.add(normalizeQuestion(text));
-}
-
-// اختيار موضوع عشوائي غير مُستخدَم حديثاً
-const recentTopics = [];
-function pickRandomTopic() {
-  let t;
-  let attempts = 0;
-  do {
-    t = TOPICS[Math.floor(Math.random() * TOPICS.length)];
-    attempts++;
-  } while (recentTopics.includes(t) && attempts < 10);
-  recentTopics.push(t);
-  // احتفظ بآخر 8 مواضيع فقط
-  if (recentTopics.length > 8) recentTopics.shift();
-  return t;
-}
-
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-/* =========================================================
-   إدارة الشاشات
-   ========================================================= */
-function showScreen(screen) {
-  [els.startScreen, els.gameScreen, els.endScreen].forEach((s) =>
-    s.classList.remove("active")
-  );
-  screen.classList.add("active");
-}
-
-/* =========================================================
-   بناء سلم الجوائز
-   ========================================================= */
-function buildLadder() {
-  els.ladder.innerHTML = "";
-  PRIZES.forEach((amount, i) => {
-    const li = document.createElement("li");
-    li.className = "prize-step";
-    if (SAFE_LEVELS.includes(i)) li.classList.add("safe");
-    li.dataset.index = i;
-    li.innerHTML = `
-      <span class="step-num">${i + 1}</span>
-      <span class="step-amount">${formatNumber(amount)}</span>
-    `;
-    els.ladder.appendChild(li);
-  });
-  updateLadder();
-}
-
-function updateLadder() {
-  const steps = els.ladder.querySelectorAll(".prize-step");
-  steps.forEach((step, i) => {
-    step.classList.remove("current", "done");
-    if (i < state.currentIndex) step.classList.add("done");
-    if (i === state.currentIndex) step.classList.add("current");
-  });
-}
-
-/* =========================================================
-   توليد الأسئلة — نظام فشل متسلسل (3 مزوّدين) + بنك احتياطي
-   ========================================================= */
-
-// محاولة جلب سؤال من مزوّد واحد (مع مهلة زمنية AbortController)
-async function tryFetchOne(cfg, difficulty, topic) {
-  // تخطّي المزوّدين الذين لم يُضَف لهم مفتاح
-  if (!cfg.API_KEY) return null;
+  const systemPrompt = "أنت مولّد أسئلة محترف للعبة 'من سيربح المليون' باللغة العربية. كل سؤال يجب أن يكون فريداً ومختلفاً عن أي سؤال سابق. أعطِ الإجابة دائماً بصيغة JSON صارمة فقط بدون أي نص إضافي.";
+  const userPrompt = `ولّد سؤالاً ثقافياً واحداً حول موضوع: «${topic}»\nبمستوى صعوبة: ${diffLabel} (لعبة من سيربح المليون).\n\nالشروط:\n- سؤال أصلي ومختلف عن أي سؤال آخر.\n- 4 خيارات متقاربة ومنطقية، إجابة صحيحة واحدة فقط.\n- أضف حقل "explanation" قصير (جملة واحدة) يشرح لماذا الإجابة صحيحة.\n- أضف حقل "topic" يعكس الموضوع.\n\nأعطِ النتيجة بصيغة JSON فقط بالشكل التالي:\n{"question":"نص السؤال","options":["الخيار1","الخيار2","الخيار3","الخيار4"],"answerIndex":0,"explanation":"شرح قصير","topic":"الموضوع"}`;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const res = await fetch(cfg.ENDPOINT, {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${cfg.API_KEY}`,
+        "Authorization": `Bearer ${state.apiKey}`,
+        "HTTP-Referer": "https://who-wants-to-be-a-millionaire.local",
+        "X-Title": "Arabic Millionaire Game",
       },
       body: JSON.stringify({
-        model: cfg.MODEL,
+        model: "deepseek/deepseek-chat",
         messages: [
-          { role: "system", content: AI_SYSTEM_PROMPT },
-          { role: "user", content: buildAIPrompt(difficulty, topic) },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
         ],
-        ...cfg.extraParams,  // باراميترات خاصة بكل مزوّد (لتجنّب HTTP 400)
+        temperature: 1.0,
+        max_tokens: 400,
       }),
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status} من ${cfg.name}`);
+    if (!res.ok) throw new Error("HTTP " + res.status);
 
     const data = await res.json();
     const text = data.choices?.[0]?.message?.content?.trim();
-    if (!text) throw new Error(`استجابة فارغة من ${cfg.name}`);
+    if (!text) return null;
 
-    // استخراج JSON حتى لو أحاطه النموذج بعلامات ```
     const match = text.match(/\{[\s\S]*\}/);
     const obj = JSON.parse(match ? match[0] : text);
 
     if (
-      typeof obj.question === "string" &&
-      obj.question.trim().length > 0 &&
-      Array.isArray(obj.options) &&
-      obj.options.length === 4 &&
-      obj.options.every((o) => typeof o === "string" && o.trim().length > 0) &&
-      Number.isInteger(obj.answerIndex) &&
-      obj.answerIndex >= 0 &&
-      obj.answerIndex < 4
+      typeof obj.question === "string" && obj.question.trim().length > 0 &&
+      Array.isArray(obj.options) && obj.options.length === 4 &&
+      obj.options.every(o => typeof o === "string" && o.trim().length > 0) &&
+      Number.isInteger(obj.answerIndex) && obj.answerIndex >= 0 && obj.answerIndex < 4
     ) {
-      return { q: obj.question, o: obj.options, a: obj.answerIndex };
+      return {
+        q: obj.question.trim(),
+        o: obj.options.map(x => x.trim()),
+        a: obj.answerIndex,
+        explanation: typeof obj.explanation === "string" ? obj.explanation.trim() : undefined,
+        topic: typeof obj.topic === "string" ? obj.topic.trim() : topic,
+        difficulty,
+      };
     }
-    throw new Error(`صيغة غير صحيحة من ${cfg.name}`);
+    return null;
+  } catch (err) {
+    console.warn("فشل توليد السؤال بالذكاء الاصطناعي:", err.message);
+    return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
-/* جلب سؤال عبر المزوّد الأول الناجح.
-   - نُجرّب كل مزوّد حتى AI_MAX_ATTEMPTS مرات لتفادي الأسئلة المكررة.
-   - إن أعاد السؤال نفسه، نختار موضوعاً مختلفاً ونحاول مجدداً.
-   - إن فشل الجميع نلجأ إلى البنك المحلي. */
-async function getQuestion(difficulty) {
-  for (const cfg of AI_CONFIGS) {
-    if (!cfg.API_KEY) continue;
+async function loadQuestion() {
+  state.loading = true;
+  state.locked = false;
+  state.awaitingNext = false;
+  state.doubleRetryMode = false;
+  state.selectedIndex = null;
+  state.revealed = false;
+  state.eliminatedIndices = [];
+  document.getElementById("loading-next").style.display = "none";
+  document.getElementById("next-question-wrapper").style.display = "none";
+  document.getElementById("explanation-panel").style.display = "none";
+  document.getElementById("assist-panel").style.display = "none";
 
-    for (let attempt = 1; attempt <= AI_MAX_ATTEMPTS; attempt++) {
-      const topic = pickRandomTopic();
-      try {
-        const q = await tryFetchOne(cfg, difficulty, topic);
-        if (q && !isDuplicate(q.q)) {
-          rememberQuestion(q.q);
-          console.log(`✅ تم توليد سؤال جديد عبر ${cfg.name} (موضوع: ${topic})`);
-          return q;
-        }
-        // سؤال مكرر — أعد المحاولة بموضوع آخر
-        if (q) {
-          console.warn(`🔁 سؤال مكرر من ${cfg.name}، إعادة المحاولة (${attempt}/${AI_MAX_ATTEMPTS})…`);
-        }
-      } catch (err) {
-        console.warn(`⚠️ فشل ${cfg.name}: ${err.message} — جارٍ الانتقال للمزوّد التالي…`);
-        break; // خطأ شبكي/صيغة: لا داعي لإعادة المحاولة على نفس المزوّد
-      }
+  const mode = MODES[state.selectedMode];
+  const difficulty = getDifficultyFromIndex(state.currentIndex, mode.totalQuestions);
+
+  // جرّب AI أولاً إن وُجد مفتاح
+  let q = null;
+  if (state.apiKey) {
+    q = await fetchQuestionFromAI(state.currentIndex, mode.totalQuestions);
+    if (q) {
+      const norm = normalizeQuestion(q.q);
+      if (state.askedQuestions.has(norm)) q = null; // مكرر
     }
   }
-  console.log("📦 جميع المزوّدين فشلوا — استخدام بنك الأسئلة المحلي");
-  return getFallbackQuestion(difficulty);
-}
 
-function getFallbackQuestion(difficulty) {
-  const bank = FALLBACK_QUESTIONS[difficulty];
-  const used = state.usedFallbackIndices[difficulty];
-  // إن استُنفدت الأسئلة، أعد التدوير
-  if (used.length >= bank.length) used.length = 0;
-  let idx;
-  do {
-    idx = Math.floor(Math.random() * bank.length);
-  } while (used.includes(idx));
-  used.push(idx);
-  const item = bank[idx];
-  // خلط الخيارات مع تعديل فهرس الإجابة
-  const correctText = item.o[item.a];
-  const shuffled = shuffle(item.o);
-  const result = {
-    q: item.q,
-    o: shuffled,
-    a: shuffled.indexOf(correctText),
-  };
-  rememberQuestion(result.q); // سجّل سؤال البنك أيضاً لمنع تكراره لاحقاً
-  return result;
-}
-
-/* =========================================================
-   النظام المسبق (Prefetch) — يُجهّز السؤال التالي في الخلفية
-   =========================================================
-   نبدأ بطلب السؤال التالي فور ظهور السؤال الحالي، فلا ينتظر
-   اللاعب بعد الإجابة. نُخزّن الوعد (Promise) لا القيمة، حتى
-   إن لم يكن الطلب قد اكتمل بعد، سيحلّ عند انتظارنا له.
-   ========================================================= */
-async function loadQuestion() {
-  state.locked = true;
-
-  // إن كان هناك سؤال مُجهّز مسبقاً انتظره، وإلا اطلبه الآن
-  let q;
-  if (state.nextQuestionPromise) {
-    els.qText.textContent = "جارٍ تجهيز السؤال…";
-    q = await state.nextQuestionPromise;
-    state.nextQuestionPromise = null;
-  } else {
-    els.qText.textContent = "جارٍ تحميل السؤال…";
-    q = await getQuestion(getDifficulty(state.currentIndex));
+  // fallback للبنك المحلي
+  if (!q) {
+    q = getFallbackQuestion(difficulty, state.askedQuestions);
   }
 
   state.question = q;
-  renderQuestion(getDifficulty(state.currentIndex));
-  state.locked = false;
+  state.askedQuestions.add(normalizeQuestion(q.q));
+  state.loading = false;
 
-  // 🔥 ابدأ تجهيز السؤال التالي فوراً في الخلفية
-  prefetchNextQuestion();
+  renderQuestion();
+  startTimer();
 }
 
-// ابدأ طلب السؤال التالي مبكراً (إن لم يكن قد بدأ بعد)
-function prefetchNextQuestion() {
-  const nextIndex = state.currentIndex + 1;
-  // لا تُجهّز ما بعد السؤال الأخير
-  if (nextIndex >= TOTAL_QUESTIONS) {
-    state.nextQuestionPromise = null;
+/* ====== المؤقت ====== */
+function startTimer() {
+  const mode = MODES[state.selectedMode];
+  if (!mode.hasTimer) {
+    document.getElementById("timer-container").style.display = "none";
     return;
   }
-  if (state.nextQuestionPromise) return; // تجهيز جارٍ بالفعل
-  state.nextQuestionPromise = getQuestion(getDifficulty(nextIndex));
-}
-
-/* =========================================================
-   عرض السؤال والخيارات
-   ========================================================= */
-function renderQuestion(difficulty) {
-  els.qNumber.textContent = state.currentIndex + 1;
-  els.qText.textContent = state.question.q;
-
-  els.difficultyTag.textContent = difficultyLabel(difficulty);
-  // السهل = الأسلوب الافتراضي (سماوي)، أما المتوسط/الصعب فبألوان مميزة
-  els.difficultyTag.className = "difficulty-tag";
-  if (difficulty === "medium" || difficulty === "hard") {
-    els.difficultyTag.classList.add(difficulty);
-  } else if (difficulty === "expert") {
-    els.difficultyTag.classList.add("hard"); // نستخدم نمط الصعب للخبير
+  if (state.locked || state.awaitingNext || state.doubleRetryMode) {
+    document.getElementById("timer-container").style.display = "none";
+    return;
   }
+  state.timerRemaining = mode.timerSeconds;
+  document.getElementById("timer-container").style.display = "";
+  updateTimerUI();
 
-  els.currentPrize.textContent = formatNumber(PRIZES[state.currentIndex]);
-  updateLadder();
-
-  // إخفاء لوحة المساعدة من السؤال السابق وإعادة بناء الخيارات
-  els.assistPanel.classList.add("hidden");
-  const letters = ["أ", "ب", "ج", "د"];
-  els.answers.innerHTML = "";
-  state.question.o.forEach((opt, i) => {
-    const btn = document.createElement("button");
-    btn.className = "answer-btn";
-    btn.dataset.index = i;
-    btn.innerHTML = `<span class="letter">${letters[i]}</span><span class="text">${opt}</span>`;
-    btn.addEventListener("click", () => handleAnswer(btn, i));
-    els.answers.appendChild(btn);
-  });
+  if (state.timerInterval) clearInterval(state.timerInterval);
+  state.timerInterval = setInterval(() => {
+    state.timerRemaining--;
+    if (state.timerRemaining <= 0) {
+      clearInterval(state.timerInterval);
+      handleTimeout();
+    } else {
+      if (state.timerRemaining <= 6) sounds.tick();
+      updateTimerUI();
+    }
+  }, 1000);
 }
 
-/* =========================================================
-   معالجة اختيار الإجابة
-   ========================================================= */
-async function handleAnswer(btn, chosenIndex) {
+function stopTimer() {
+  if (state.timerInterval) {
+    clearInterval(state.timerInterval);
+    state.timerInterval = null;
+  }
+  document.getElementById("timer-container").style.display = "none";
+}
+
+function updateTimerUI() {
+  const mode = MODES[state.selectedMode];
+  const el = document.getElementById("timer-value");
+  const bar = document.getElementById("timer-bar");
+  el.textContent = state.timerRemaining + " ثانية";
+  if (state.timerRemaining <= 10) el.style.color = "#ef4444"; else el.style.color = "#00d4ff";
+  const ratio = state.timerRemaining / mode.timerSeconds;
+  bar.style.width = (ratio * 100) + "%";
+  bar.classList.toggle("danger", state.timerRemaining <= 10);
+}
+
+function handleTimeout() {
   if (state.locked) return;
-  state.locked = true;
-
-  const buttons = els.answers.querySelectorAll(".answer-btn");
-  buttons.forEach((b) => (b.disabled = true));
-  btn.classList.add("selected");
-
-  await sleep(700); // إثارة قبل الكشف :)
-
-  const correct = chosenIndex === state.question.a;
-  if (correct) {
-    btn.classList.add("correct");
-    await sleep(1200);
-
-    state.currentIndex++;
-    if (state.currentIndex >= TOTAL_QUESTIONS) {
-      endGame(true);
+  const mode = MODES[state.selectedMode];
+  if (mode.mistakes > 0) {
+    addMistake();
+    sounds.loseLife();
+    if (state.mistakes >= mode.mistakes) {
+      endGame(false, 0, "ended");
     } else {
-      loadQuestion();
+      // عرض زر التالي
+      state.locked = true;
+      state.awaitingNext = true;
+      stopTimer();
+      renderQuestion();
+      document.getElementById("next-question-wrapper").style.display = "";
+      document.getElementById("next-question-btn").textContent = "⏰ انتهى الوقت — السؤال التالي ←";
     }
   } else {
-    btn.classList.add("wrong");
-    // أظهر الإجابة الصحيحة
-    buttons[state.question.a].classList.add("correct");
-    await sleep(1500);
-    endGame(false);
+    endGame(false, 0, "timeout");
   }
 }
 
-/* =========================================================
-   وسائل المساعدة
-   ========================================================= */
-// 1) حذف إجابتين
+/* ====== عرض السؤال ====== */
+function renderQuestion() {
+  const mode = MODES[state.selectedMode];
+  const q = state.question;
+  if (!q) return;
+
+  document.getElementById("question-number").textContent = (state.currentIndex + 1) + (mode.totalQuestions > 0 ? ` من ${mode.totalQuestions}` : "");
+  document.getElementById("question-topic").textContent = q.topic || "";
+  document.getElementById("question-topic").style.display = q.topic ? "" : "none";
+
+  if (mode.id === "endless" || mode.id === "survival") {
+    document.getElementById("correct-count-tag").textContent = `إجابات صحيحة: ${state.totalCorrect}`;
+    document.getElementById("correct-count-tag").style.display = "";
+  } else {
+    document.getElementById("correct-count-tag").style.display = "none";
+  }
+
+  document.getElementById("question-text").textContent = q.q;
+
+  // الخيارات
+  const grid = document.getElementById("options-grid");
+  grid.innerHTML = "";
+  q.o.forEach((opt, i) => {
+    const btn = document.createElement("button");
+    btn.className = "option-btn";
+    btn.dataset.index = i;
+
+    const isSelected = i === state.selectedIndex;
+    const isCorrect = state.revealed && i === q.a;
+    const isWrong = state.revealed && isSelected && i !== q.a;
+    const isEliminated = state.eliminatedIndices.includes(i);
+
+    if (isEliminated) btn.classList.add("eliminated");
+    else if (isCorrect) btn.classList.add("correct");
+    else if (isWrong) btn.classList.add("wrong");
+    else if (isSelected) btn.classList.add("selected");
+
+    btn.innerHTML = `<span class="option-letter">${LETTERS[i]}</span><span>${opt}</span>`;
+    btn.disabled = state.locked || state.loading || isEliminated || state.awaitingNext;
+    btn.onclick = () => handleAnswer(i);
+    grid.appendChild(btn);
+  });
+
+  // تحديث الرأس
+  if (mode.prizes.length > 0) {
+    document.getElementById("current-prize").textContent = (mode.prizes[state.currentIndex] || 0).toLocaleString("en-US");
+  }
+  if (mode.mistakes > 0) {
+    renderLives();
+  }
+  if (mode.id === "endless" || mode.id === "survival") {
+    document.getElementById("current-score").textContent = state.totalCorrect * 100;
+  }
+
+  // شارة السلسلة
+  document.getElementById("streak-badge").style.display = state.streak > 0 ? "" : "none";
+  document.getElementById("streak-count").textContent = state.streak;
+
+  // سلم الجوائز
+  renderPrizeLadder();
+
+  // شرح الإجابة
+  if (state.locked && !state.doubleRetryMode && q.explanation) {
+    document.getElementById("explanation-text").textContent = q.explanation;
+    document.getElementById("explanation-panel").style.display = "";
+  }
+
+  // زر السؤال التالي
+  if (state.awaitingNext) {
+    document.getElementById("next-question-wrapper").style.display = "";
+    const btn = document.getElementById("next-question-btn");
+    if (mode.totalQuestions > 0 && state.currentIndex + 1 >= mode.totalQuestions) {
+      btn.textContent = "🏆 إنهاء اللعبة";
+    } else {
+      btn.textContent = "السؤال التالي ←";
+    }
+  } else {
+    document.getElementById("next-question-wrapper").style.display = "none";
+  }
+
+  renderLifelines();
+}
+
+function renderLives() {
+  const mode = MODES[state.selectedMode];
+  if (mode.mistakes <= 0) return;
+  const remaining = mode.mistakes - state.mistakes;
+  let html = "";
+  for (let i = 0; i < mode.mistakes; i++) {
+    html += i < remaining ? "❤️" : "🖤";
+  }
+  document.getElementById("lives-display").textContent = html;
+}
+
+function renderPrizeLadder() {
+  const mode = MODES[state.selectedMode];
+  const ladder = document.getElementById("prize-ladder");
+  if (mode.prizes.length === 0) {
+    ladder.style.display = "none";
+    return;
+  }
+  ladder.style.display = "";
+  let html = "<h3>سلم الجوائز</h3>";
+  // عرض معكوس (الأعلى أولاً)
+  for (let i = mode.prizes.length - 1; i >= 0; i--) {
+    let cls = "prize-step";
+    if (mode.safeLevels.includes(i)) cls += " safe";
+    if (i < state.currentIndex) cls += " done";
+    if (i === state.currentIndex) cls += " current";
+    html += `<div class="${cls}"><span class="step-number">${i + 1}</span><span class="step-amount">${mode.prizes[i].toLocaleString("en-US")}</span></div>`;
+  }
+  ladder.innerHTML = html;
+}
+
+function renderLifelines() {
+  const mode = MODES[state.selectedMode];
+  const container = document.getElementById("lifelines");
+  if (!mode.hasLifelines) { container.innerHTML = ""; return; }
+
+  const lifelines = [
+    { key: "fifty", icon: "½", title: "حذف إجابتين", available: state.lifelines.fifty },
+    { key: "friend", icon: "☎", title: "الاتصال بصديق", available: state.lifelines.friend },
+    { key: "audience", icon: "👥", title: "رأي الجمهور", available: state.lifelines.audience },
+    { key: "switch", icon: "🔁", title: "استبدال السؤال", available: state.lifelines.switch && !state.usedSwitchThisQuestion },
+    { key: "double", icon: "⚡", title: "إجابة مزدوجة", available: state.lifelines.double && !state.usedDoubleThisQuestion },
+  ];
+
+  container.innerHTML = lifelines.map(l => 
+    `<button class="lifeline-btn" ${!l.available ? "disabled" : ""} title="${l.title}" onclick="useLifeline('${l.key}')">${l.icon}</button>`
+  ).join("");
+}
+
+/* ====== معالجة الإجابة ====== */
+async function handleAnswer(chosenIndex) {
+  if (state.locked || !state.question) return;
+  state.locked = true;
+  state.selectedIndex = chosenIndex;
+  stopTimer();
+  sounds.select();
+
+  const q = state.question;
+  const correct = chosenIndex === q.a;
+
+  await sleep(700);
+  state.revealed = true;
+  renderQuestion();
+
+  if (correct) {
+    sounds.correct();
+    state.streak++;
+    state.bestStreak = Math.max(state.bestStreak, state.streak);
+    state.totalCorrect++;
+
+    // استعادة قلب في وضع البقاء كل 10 إجابات صحيحة
+    const mode = MODES[state.selectedMode];
+    if (mode.mistakes > 0 && state.totalCorrect % 10 === 0 && state.mistakes > 0) {
+      state.mistakes--;
+      sounds.recover();
+    }
+
+    await sleep(1100);
+    if (mode.safeLevels.includes(state.currentIndex)) sounds.safe();
+    else sounds.next();
+
+    // عرض زر السؤال التالي بدلاً من الانتقال التلقائي
+    state.awaitingNext = true;
+    renderQuestion();
+  } else {
+    // وسيلة الإجابة المزدوجة
+    if (state.usedDoubleThisQuestion && !state.doubleRetryMode) {
+      sounds.wrong();
+      await sleep(1500);
+      state.doubleRetryMode = true;
+      state.eliminatedIndices = [...state.eliminatedIndices, chosenIndex];
+      state.locked = false;
+      state.selectedIndex = null;
+      state.revealed = false;
+      showAssist("🎯 الإجابة المزدوجة", "إجابة خاطئة! يمكنك المحاولة مرة أخرى. اختر إجابة أخرى من الخيارات المتبقية.");
+      renderQuestion();
+      startTimer();
+      return;
+    }
+
+    sounds.wrong();
+    state.streak = 0;
+
+    const mode = MODES[state.selectedMode];
+    if (mode.mistakes > 0 && state.mistakes + 1 < mode.mistakes) {
+      state.mistakes++;
+      sounds.loseLife();
+      await sleep(1400);
+      state.awaitingNext = true;
+      renderQuestion();
+    } else {
+      await sleep(1500);
+      const lastSafe = mode.safeLevels.filter(i => i < state.currentIndex).pop();
+      const prize = lastSafe !== undefined ? mode.prizes[lastSafe] : 0;
+      endGame(false, prize, "wrong");
+    }
+  }
+}
+
+async function goToNextQuestion() {
+  sounds.click();
+  const mode = MODES[state.selectedMode];
+
+  // إن كان السؤال الحالي هو الأخير، أنهِ اللعبة مباشرةً
+  if (mode.totalQuestions > 0 && state.currentIndex + 1 >= mode.totalQuestions) {
+    const prize = mode.prizes[state.currentIndex] || 0;
+    endGame(true, prize, "win");
+    return;
+  }
+
+  // إخفاء زر السؤال التالي وكل العناصر المرتبطة بالسؤال الحالي
+  document.getElementById("next-question-wrapper").style.display = "none";
+  document.getElementById("explanation-panel").style.display = "none";
+  document.getElementById("assist-panel").style.display = "none";
+
+  // إفراغ منطقة السؤال والخيارات لتفادي عرض السؤال القديم أثناء التحميل
+  document.getElementById("question-text").textContent = "";
+  document.getElementById("options-grid").innerHTML = "";
+  document.getElementById("question-topic").style.display = "none";
+  document.getElementById("correct-count-tag").style.display = "none";
+
+  // إيقاف أي مؤقّت نشط
+  stopTimer();
+
+  // عرض شريط التحميل
+  showLoadingProgress();
+
+  // الانتقال للسؤال التالي
+  state.currentIndex++;
+  state.usedSwitchThisQuestion = false;
+  state.usedDoubleThisQuestion = false;
+
+  // ابدأ تحميل السؤال بشكل غير متزامن مع متابعة تقدّم الشريط
+  const loadPromise = loadQuestion();
+  await loadPromise;
+
+  // أكمل الشريط إلى 100% ثم أخفِه
+  await completeLoadingProgress();
+  hideLoadingProgress();
+}
+
+/* ====== شريط تحميل السؤال التالي ====== */
+let loadingProgressInterval = null;
+let loadingProgressValue = 0;
+
+function showLoadingProgress() {
+  const wrapper = document.getElementById("loading-progress-wrapper");
+  const bar = document.getElementById("loading-progress-bar");
+  const status = document.getElementById("loading-progress-status");
+  const label = document.getElementById("loading-progress-label");
+
+  loadingProgressValue = 0;
+  bar.style.width = "0%";
+  status.textContent = "يرجى الانتظار…";
+  label.textContent = state.apiKey
+    ? "جارٍ توليد سؤال جديد بالذكاء الاصطناعي…"
+    : "جارٍ تجهيز السؤال التالي…";
+  wrapper.style.display = "";
+
+  // محاكاة تقدّم تدريجي حتى 90% ثم توقّف حتى يكتمل التحميل فعلياً
+  if (loadingProgressInterval) clearInterval(loadingProgressInterval);
+  loadingProgressInterval = setInterval(() => {
+    if (loadingProgressValue < 90) {
+      // تباطؤ تدريجي كلما اقتربنا من 90%
+      const increment = loadingProgressValue < 30 ? 8
+                      : loadingProgressValue < 60 ? 4
+                      : loadingProgressValue < 80 ? 1.5
+                      : 0.4;
+      loadingProgressValue = Math.min(90, loadingProgressValue + increment);
+      bar.style.width = loadingProgressValue + "%";
+
+      // تحديث الرسالة حسب التقدّم
+      if (loadingProgressValue >= 30 && loadingProgressValue < 70) {
+        status.textContent = "جارٍ المعالجة…";
+      } else if (loadingProgressValue >= 70) {
+        status.textContent = "يكاد يكتمل…";
+      }
+    }
+  }, 120);
+}
+
+async function completeLoadingProgress() {
+  if (loadingProgressInterval) {
+    clearInterval(loadingProgressInterval);
+    loadingProgressInterval = null;
+  }
+  const bar = document.getElementById("loading-progress-bar");
+  const status = document.getElementById("loading-progress-status");
+  // اكتمل الشريط إلى 100%
+  loadingProgressValue = 100;
+  bar.style.width = "100%";
+  status.textContent = "✓ تم تجهيز السؤال!";
+  // انتظار قصير لإظهار اكتمال الشريط قبل الانتقال
+  await sleep(350);
+}
+
+function hideLoadingProgress() {
+  document.getElementById("loading-progress-wrapper").style.display = "none";
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+/* ====== وسائل المساعدة ====== */
+function useLifeline(key) {
+  if (state.locked || !state.question) return;
+  const mode = MODES[state.selectedMode];
+  if (!mode.hasLifelines) return;
+  if (!state.lifelines[key]) return;
+  if (key === "switch" && state.usedSwitchThisQuestion) return;
+  if (key === "double" && state.usedDoubleThisQuestion) return;
+
+  state.lifelines[key] = false;
+  sounds.lifeline();
+
+  if (key === "fifty") useFifty();
+  else if (key === "friend") useFriend();
+  else if (key === "audience") useAudience();
+  else if (key === "switch") useSwitch();
+  else if (key === "double") useDouble();
+
+  renderLifelines();
+}
+
 function useFifty() {
-  if (!state.lifelines.fifty || state.locked) return;
-  state.lifelines.fifty = false;
-  els.ll5050.classList.add("used");
-  els.ll5050.disabled = true;
-
-  const buttons = Array.from(els.answers.querySelectorAll(".answer-btn"));
-  const wrong = buttons
-    .map((b, i) => ({ b, i }))
-    .filter((x) => x.i !== state.question.a);
-  const toRemove = shuffle(wrong).slice(0, 2);
-  toRemove.forEach((x) => x.b.classList.add("eliminated"));
+  const q = state.question;
+  const wrong = [0, 1, 2, 3].filter(i => i !== q.a);
+  const shuffled = wrong.sort(() => Math.random() - 0.5).slice(0, 2);
+  state.eliminatedIndices = [...state.eliminatedIndices, ...shuffled];
+  renderQuestion();
 }
 
-// 2) الاتصال بصديق
 function useFriend() {
-  if (!state.lifelines.friend || state.locked) return;
-  state.lifelines.friend = false;
-  els.llFriend.classList.add("used");
-  els.llFriend.disabled = true;
-
-  // الصديق يميل للإجابة الصحيحة (85%) لكنه ليس أكيداً دائماً
-  const letters = ["أ", "ب", "ج", "د"];
+  const q = state.question;
   const confident = Math.random() < 0.85;
-  const guessIndex = confident
-    ? state.question.a
-    : Math.floor(Math.random() * 4);
+  const guessIndex = confident ? q.a : Math.floor(Math.random() * 4);
   const surety = confident ? 80 + Math.floor(Math.random() * 18) : 40 + Math.floor(Math.random() * 30);
-
-  showAssist(
-    "☎ الاتصال بصديق",
-    `مرحباً! أعتقد أن الإجابة الصحيحة هي الخيار <b>${letters[guessIndex]}</b> ` +
-    `(${state.question.o[guessIndex]}). أنا متأكد بنحو <b>${surety}%</b>.`
-  );
+  showAssist("☎ الاتصال بصديق", `مرحباً! أعتقد أن الإجابة الصحيحة هي الخيار <b style="color:#f5b800">${LETTERS[guessIndex]}</b> (${q.o[guessIndex]}). أنا متأكد بنحو <b style="color:#f5b800">${surety}%</b>.`);
 }
 
-// 3) سؤال الجمهور
 function useAudience() {
-  if (!state.lifelines.audience || state.locked) return;
-  state.lifelines.audience = false;
-  els.llAudience.classList.add("used");
-  els.llAudience.disabled = true;
-
-  const letters = ["أ", "ب", "ج", "د"];
-  // توليد نسب: الإجابة الصحيحة تحظى بأعلى نسبة عادةً
-  const correctPct = 45 + Math.floor(Math.random() * 35); // 45-80
-  let remaining = 100 - correctPct;
-  const others = [0, 1, 2, 3].filter((i) => i !== state.question.a);
+  const q = state.question;
+  const correctPct = 45 + Math.floor(Math.random() * 35);
+  let rem = 100 - correctPct;
+  const others = [0, 1, 2, 3].filter(i => i !== q.a);
   const pcts = {};
-  pcts[state.question.a] = correctPct;
+  pcts[q.a] = correctPct;
   others.forEach((i, k) => {
-    if (k === others.length - 1) pcts[i] = remaining;
+    if (k === others.length - 1) pcts[i] = rem;
     else {
-      const v = Math.floor(Math.random() * remaining);
+      const v = Math.floor(Math.random() * rem);
       pcts[i] = v;
-      remaining -= v;
+      rem -= v;
     }
   });
 
-  let html = `<span class="assist-title">📊 رأي الجمهور</span><div class="poll-bars">`;
-  [0, 1, 2, 3].forEach((i) => {
-    html += `
-      <div class="poll-row">
-        <span class="poll-letter">${letters[i]}</span>
-        <div class="poll-track"><div class="poll-fill" style="width:0"></div></div>
-        <span class="poll-pct">${pcts[i]}%</span>
-      </div>`;
+  let html = "";
+  [0, 1, 2, 3].forEach(i => {
+    html += `<div class="poll-row"><span class="poll-letter">${LETTERS[i]}</span><div class="poll-bar-bg"><div class="poll-bar-fill" data-pct="${pcts[i]}"></div></div><span class="poll-pct">${pcts[i]}%</span></div>`;
   });
-  html += `</div>`;
-  showAssist(null, html);
+  showAssist("📊 رأي الجمهور", html);
 
-  // تحريك الأعمدة
   setTimeout(() => {
-    els.assistPanel.querySelectorAll(".poll-fill").forEach((bar, k) => {
-      bar.style.width = pcts[k] + "%";
+    document.querySelectorAll(".poll-bar-fill").forEach(bar => {
+      bar.style.width = bar.dataset.pct + "%";
     });
   }, 100);
 }
 
-function showAssist(title, html) {
-  els.assistPanel.classList.remove("hidden");
-  els.assistPanel.innerHTML = title
-    ? `<span class="assist-title">${title}</span>${html}`
-    : html;
-}
-
-/* =========================================================
-   إنهاء اللعبة
-   ========================================================= */
-function endGame(won) {
-  let prize;
-  let message;
-
-  if (won) {
-    prize = PRIZES[TOTAL_QUESTIONS - 1]; // الجائزة الكبرى
-    message = "🎉 مبروك! لقد أجبت على جميع الأسئلة وفزت بالجائزة الكبرى!";
-    els.endTitle.textContent = "الفوز الكبير!";
-  } else {
-    // ابحث عن آخر مرحلة أمان تم بلوغها
-    const lastSafe = SAFE_LEVELS.filter((i) => i < state.currentIndex).pop();
-    prize = lastSafe !== undefined ? PRIZES[lastSafe] : 0;
-    message =
-      prize > 0
-        ? `أحسنت! لقد بلغت مرحلة أمان وربحت المبلغ المضمون.`
-        : `للأسف إجابة خاطئة. حظ أوفر في المرة القادمة!`;
-    els.endTitle.textContent = "انتهت اللعبة";
-  }
-
-  els.endMessage.textContent = message;
-  els.finalPrize.textContent = formatNumber(prize);
-  showScreen(els.endScreen);
-}
-
-/* =========================================================
-   بدء / إعادة تشغيل اللعبة
-   ========================================================= */
-function startGame() {
-  state.currentIndex = 0;
+async function useSwitch() {
+  state.usedSwitchThisQuestion = true;
+  state.loading = true;
   state.locked = false;
-  state.lifelines = { fifty: true, friend: true, audience: true };
-  state.usedFallbackIndices = { easy: [], medium: [], hard: [], expert: [] };
-  state.nextQuestionPromise = null; // إلغاء أي تجهيز سابق من جولة منتهية
-  state.askedQuestions = new Set(); // مسح سجل الأسئلة المطروقة في الجولة الجديدة
+  state.selectedIndex = null;
+  state.revealed = false;
+  state.eliminatedIndices = [];
+  stopTimer();
+  document.getElementById("loading-next").style.display = "";
+  document.getElementById("loading-next").textContent = "جارٍ استبدال السؤال…";
 
-  // إعادة تفعيل وسائل المساعدة
-  [els.ll5050, els.llFriend, els.llAudience].forEach((b) => {
-    b.classList.remove("used");
-    b.disabled = false;
-  });
-  els.currentPrize.textContent = "0";
-
-  buildLadder();
-  showScreen(els.gameScreen);
-  loadQuestion();
+  const mode = MODES[state.selectedMode];
+  let q = null;
+  if (state.apiKey) {
+    q = await fetchQuestionFromAI(state.currentIndex, mode.totalQuestions);
+    if (q && state.askedQuestions.has(normalizeQuestion(q.q))) q = null;
+  }
+  if (!q) {
+    const difficulty = getDifficultyFromIndex(state.currentIndex, mode.totalQuestions);
+    q = getFallbackQuestion(difficulty, state.askedQuestions);
+  }
+  state.question = q;
+  state.askedQuestions.add(normalizeQuestion(q.q));
+  state.loading = false;
+  document.getElementById("loading-next").style.display = "none";
+  renderQuestion();
+  startTimer();
 }
 
-/* =========================================================
-   ربط الأحداث
-   ========================================================= */
-els.startBtn.addEventListener("click", startGame);
-els.restartBtn.addEventListener("click", startGame);
-els.ll5050.addEventListener("click", useFifty);
-els.llFriend.addEventListener("click", useFriend);
-els.llAudience.addEventListener("click", useAudience);
+function useDouble() {
+  state.usedDoubleThisQuestion = true;
+  showAssist("🎯 الإجابة المزدوجة", "تم تفعيل الإجابة المزدوجة! إذا أخطأت، يمكنك المحاولة مرة أخرى.");
+}
 
-/* =========================================================
-   =========================================================
-   ⭐ شرح نظام الذكاء الاصطناعي (Failover + Prefetch) ⭐
-   =========================================================
+function showAssist(title, content) {
+  const panel = document.getElementById("assist-panel");
+  panel.innerHTML = `<span class="assist-panel-title">${title}</span>${content}`;
+  panel.style.display = "";
+}
 
-   تعمل اللعبة مباشرةً (بدون أي إعداد) عبر بنك أسئلة محلي
-   مدمج يضمن تجربة كاملة دائماً. لكن للميزة الكاملة — توليد
-   أسئلة لا نهائية ومتنوعة حيّاً — نستخدم نماذج لغوية عبر API.
+/* ====== الانسحاب والعودة ====== */
+function walkAway() {
+  if (state.locked) return;
+  sounds.walkaway();
+  const mode = MODES[state.selectedMode];
+  const prize = state.currentIndex > 0 ? (mode.prizes[state.currentIndex - 1] || 0) : 0;
+  endGame(false, prize, "walkaway");
+}
 
-   🔹 نظام الفشل المتسلسل (Failover)
-   ----------------------------------
-   في أعلى الملف يوجد مصفوفة AI_CONFIGS تضم حتى 3 مزوّدين:
+function exitToMenu() {
+  if (state.locked) return;
+  if (!confirm("هل تريد إنهاء اللعبة والعودة للقائمة الرئيسية؟")) return;
+  sounds.click();
+  stopTimer();
+  showScreen("menu");
+}
 
-       const AI_CONFIGS = [
-         { name:"Groq",       API_KEY:"...", ENDPOINT:"...", MODEL:"..." }, // أساسي
-         { name:"OpenAI",     API_KEY:"...", ENDPOINT:"...", MODEL:"..." }, // احتياطي 1
-         { name:"DeepSeek",   API_KEY:"...", ENDPOINT:"...", MODEL:"..." }, // احتياطي 2
-       ];
+/* ====== إنهاء اللعبة ====== */
+function addMistake() {
+  state.mistakes++;
+}
 
-   الترتيب عند توليد كل سؤال:
-       Groq → إن فشل → OpenAI → إن فشل → DeepSeek → إن فشل → بنك الأسئلة المحلي
-   (الفشل يشمل: تجاوز حد الطلبات 429، أخطاء الشبكة، انتهاء المهلة
-    الزمنية AI_TIMEOUT_MS = 12 ثانية، أو صيغة JSON خاطئة)
+function endGame(won, prize, reason) {
+  stopTimer();
+  state.lastResult = { won, prize, reason, correctCount: state.totalCorrect, bestStreak: state.bestStreak, mode: state.selectedMode };
 
-   تابع العملية في وحدة تحكم المتصفح (Console) لرؤية أي مزوّد
-   نجح وأيهم فشل، مع رسائل توضيحية بالعربية.
+  // تحديث الإحصائيات
+  const stats = loadStats();
+  stats.gamesPlayed++;
+  if (won) stats.gamesWon++;
+  stats.totalWinnings += prize;
+  stats.totalCorrect += state.totalCorrect;
+  stats.totalQuestions += state.currentIndex + (won ? 1 : 0);
+  stats.bestStreak = Math.max(stats.bestStreak, state.bestStreak);
+  stats.lastPlayed = Date.now();
+  const today = new Date().toDateString();
+  if (stats.lastPlayDate !== today) {
+    const yesterday = new Date(Date.now() - 86400000).toDateString();
+    stats.dailyStreak = stats.lastPlayDate === yesterday ? stats.dailyStreak + 1 : 1;
+    stats.lastPlayDate = today;
+  }
+  const mode = MODES[state.selectedMode];
+  if (state.selectedMode === "classic" && prize > stats.bestClassicPrize) stats.bestClassicPrize = prize;
+  if (state.selectedMode === "endless" && state.totalCorrect > stats.bestEndlessScore) stats.bestEndlessScore = state.totalCorrect;
+  if (won && state.mistakes === 0) stats.perfectGames++;
+  saveStats(stats);
 
-   🔹 التحميل المسبق (Prefetch) — لكسب الوقت
-   ------------------------------------------
-   فور ظهور السؤال الحالي، يبدأ النظام بطلب السؤال التالي في
-   الخلفية ويُخزّن وعده (Promise) في state.nextQuestionPromise.
-   عندما يُجيب اللاعب وينتقل للسؤال التالي، يكون قد اكتمل غالباً
-   فيظهر فوراً دون أي انتظار. إن لم يكتمل بعد، يُنتظر الاكتمال.
+  // عرض شاشة النهاية
+  const icon = won ? "🏆" : (reason === "walkaway" ? "👋" : (reason === "timeout" ? "⏰" : "💔"));
+  document.getElementById("end-icon").textContent = icon;
+  
+  let title = "انتهت اللعبة";
+  if (won) title = "🎉 تهانينا! فزت!";
+  else if (reason === "walkaway") title = "انسحبت بمكسب!";
+  else if (reason === "timeout") title = "انتهى الوقت!";
+  else if (reason === "ended") title = "نفدت الأرواح!";
+  
+  document.getElementById("end-title").textContent = title;
+  
+  let subtitle = "";
+  if (won) subtitle = `أكملت ${mode.name} بنجاح وحصلت على الجائزة الكبرى!`;
+  else if (reason === "walkaway") subtitle = `قررت الانسحاب والاحتفاظ بمكسبك.`;
+  else if (reason === "timeout") subtitle = `انتهى الوقت قبل أن تجيب.`;
+  else if (reason === "ended") subtitle = `نفدت جميع أرواحك. حظ أوفر في المرة القادمة!`;
+  else subtitle = `إجابة خاطئة. توقفت عند السؤال ${state.currentIndex + 1}.`;
+  document.getElementById("end-subtitle").textContent = subtitle;
 
-   🔹 لماذا وضع المفاتيح هنا يُعتبر "مؤقتاً فقط"؟
-   ----------------------------------------------
-   وضع المفتاح داخل كود الواجهة الأمامية (frontend) يجعله مكشوفاً
-   لأي زائر يفتح أدوات المطوّر. هذا مقبول للتجربة المحلية فقط.
+  document.getElementById("end-prize").textContent = prize.toLocaleString("en-US");
+  document.getElementById("end-correct").textContent = state.totalCorrect;
+  document.getElementById("end-streak").textContent = state.bestStreak;
 
-   🔹 الطريقة الآمنة (للنشر الحقيقي على الإنترنت)
-   ----------------------------------------------
-   أنشئ خادماً وسيطاً (Node.js / PHP / Python) يحتفظ بالمفاتيح
-   سرّاً ويُعيد السؤال فقط، ثم ضع عنوانه في ENDPOINT.
+  if (won) sounds.win();
+  else if (reason === "walkaway") sounds.walkaway();
+  else sounds.wrong();
 
-   🔹 مزوّدين إضافيين متوافقين بنفس صيغة OpenAI
-   --------------------------------------------
-   • Groq:        https://api.groq.com/openai/v1/chat/completions
-   • DeepSeek:    https://api.deepseek.com/v1/chat/completions
-   • OpenRouter:  https://openrouter.ai/api/v1/chat/completions
-   • Together / Mistral / ... إلخ.
-   ========================================================= */
+  setTimeout(() => showScreen("end"), 500);
+}
 
+/* ====== الإحصائيات ====== */
+function renderStats() {
+  const stats = loadStats();
+  const container = document.getElementById("stats-container");
+  const cards = [
+    { icon: "🎮", label: "ألعاب لعبتها", value: stats.gamesPlayed },
+    { icon: "🏆", label: "مرات الفوز", value: stats.gamesWon },
+    { icon: "💰", label: "إجمالي المكاسب", value: stats.totalWinnings.toLocaleString("en-US") },
+    { icon: "💎", label: "أفضل جائزة كلاسيكية", value: stats.bestClassicPrize.toLocaleString("en-US") },
+    { icon: "♾️", label: "أفضل نتيجة لانهائية", value: stats.bestEndlessScore },
+    { icon: "🔥", label: "أطول سلسلة", value: stats.bestStreak },
+    { icon: "✅", label: "إجمالي الإجابات الصحيحة", value: stats.totalCorrect },
+    { icon: "🎯", label: "ألعاب مثالية", value: stats.perfectGames },
+    { icon: "📅", label: "أيام متتالية", value: stats.dailyStreak },
+  ];
+  container.innerHTML = cards.map(c => 
+    `<div class="stat-card"><div class="stat-card-icon">${c.icon}</div><div class="stat-card-label">${c.label}</div><div class="stat-card-value">${c.value}</div></div>`
+  ).join("");
+}
+
+/* ====== الإعدادات ====== */
+function renderSettings() {
+  document.getElementById("api-key-input").value = state.apiKey;
+  document.getElementById("sound-checkbox").checked = state.soundEnabled;
+  const status = document.getElementById("api-status");
+  if (state.apiKey) {
+    status.textContent = "✓ مفتاح محفوظ — سيُستخدم الذكاء الاصطناعي لتوليد الأسئلة";
+    status.style.color = "#10b981";
+  } else {
+    status.textContent = "لم يُحفظ مفتاح — ستُستخدم الأسئلة المدمجة فقط";
+    status.style.color = "rgba(255,255,255,0.5)";
+  }
+}
+
+// ملاحظة: دوال المعالجة (handlers) مُنفصلة عن دوال الحفظ الفعلية
+// لتفادي تعارض الأسماء. دالة saveApiKeyToStorage(key) تحفظ فعلياً،
+// بينما handleSaveApiKey() تقرأ القيمة من المدخل ثم تستدعيها.
+function handleSaveApiKey() {
+  const key = document.getElementById("api-key-input").value.trim();
+  if (!key) {
+    const status = document.getElementById("api-status");
+    status.textContent = "⚠ الرجاء إدخال مفتاح صحيح أولاً";
+    status.style.color = "#ef4444";
+    return;
+  }
+  saveApiKeyToStorage(key);
+  renderSettings();
+  const status = document.getElementById("api-status");
+  const original = status.textContent;
+  status.textContent = "✓ تم حفظ المفتاح بنجاح! سيُستخدم في الأسئلة القادمة.";
+  status.style.color = "#10b981";
+  sounds.correct();
+  setTimeout(() => renderSettings(), 2500);
+}
+
+function handleClearApiKey() {
+  saveApiKeyToStorage("");
+  document.getElementById("api-key-input").value = "";
+  renderSettings();
+  sounds.click();
+}
+
+function toggleSoundCheckbox(checkbox) {
+  state.soundEnabled = checkbox.checked;
+  saveSoundPref();
+  if (state.soundEnabled) sounds.click();
+  document.getElementById("sound-icon").textContent = state.soundEnabled ? "🔊" : "🔇";
+}
+
+function toggleSound() {
+  state.soundEnabled = !state.soundEnabled;
+  saveSoundPref();
+  document.getElementById("sound-icon").textContent = state.soundEnabled ? "🔊" : "🔇";
+  if (state.soundEnabled) sounds.click();
+}
+
+function resetAllData() {
+  if (!confirm("هل أنت متأكد؟ سيتم حذف جميع الإحصائيات والإعدادات.")) return;
+  localStorage.removeItem("millionaire_stats");
+  localStorage.removeItem("millionaire_api_key");
+  localStorage.removeItem("millionaire_sound");
+  state.apiKey = "";
+  state.soundEnabled = true;
+  alert("تم حذف جميع البيانات.");
+  showScreen("menu");
+}
+
+/* ====== التهيئة ====== */
+function init() {
+  loadApiKey();
+  loadSoundPref();
+  document.getElementById("sound-icon").textContent = state.soundEnabled ? "🔊" : "🔇";
+  showScreen("menu");
+}
+
+// ابدأ عند تحميل الصفحة
+window.addEventListener("DOMContentLoaded", init);
