@@ -351,6 +351,21 @@ function startGame(modeId) {
 
   renderPrizeLadder();
   renderLifelines();
+
+  // مسح أي محتوى من الجولة السابقة قبل عرض الشاشة
+  // لتفادي وميض السؤال القديم قبل تحميل الجديد
+  document.getElementById("question-text").textContent = "جارٍ تحميل السؤال…";
+  document.getElementById("options-grid").innerHTML = "";
+  document.getElementById("question-topic").style.display = "none";
+  document.getElementById("correct-count-tag").style.display = "none";
+  document.getElementById("explanation-panel").style.display = "none";
+  document.getElementById("assist-panel").style.display = "none";
+  document.getElementById("next-question-wrapper").style.display = "none";
+  document.getElementById("loading-progress-wrapper").style.display = "none";
+  document.getElementById("timer-container").style.display = "none";
+  document.getElementById("loading-next").style.display = "none";
+  document.getElementById("streak-badge").style.display = "none";
+
   showScreen("playing");
   loadQuestion();
 }
@@ -719,10 +734,11 @@ async function handleAnswer(chosenIndex) {
   const correct = chosenIndex === q.a;
 
   await sleep(700);
-  state.revealed = true;
-  renderQuestion();
 
   if (correct) {
+    // إجابة صحيحة — اكشف عنها بالأخضر
+    state.revealed = true;
+    renderQuestion();
     sounds.correct();
     state.streak++;
     state.bestStreak = Math.max(state.bestStreak, state.streak);
@@ -743,20 +759,28 @@ async function handleAnswer(chosenIndex) {
     state.awaitingNext = true;
     renderQuestion();
   } else {
-    // وسيلة الإجابة المزدوجة
+    // وسيلة الإجابة المزدوجة: لا تكشف عن الإجابة الصحيحة، فقط أظهر الخطأ ثم اسمح بإعادة المحاولة
     if (state.usedDoubleThisQuestion && !state.doubleRetryMode) {
       sounds.wrong();
-      await sleep(1500);
+      // أظهر الإجابة الخاطئة بالأحمر فقط (دون كشف الصحيحة)
+      // revealed تبقى false حتى لا تظهر الإجابة الصحيحة بالأخضر
+      state.revealed = false;
+      // استخدم حالة مؤقتة لعرض الإجابة الخاطئة بالأحمر
       state.doubleRetryMode = true;
       state.eliminatedIndices = [...state.eliminatedIndices, chosenIndex];
       state.locked = false;
-      state.selectedIndex = null;
-      state.revealed = false;
-      showAssist("🎯 الإجابة المزدوجة", "إجابة خاطئة! يمكنك المحاولة مرة أخرى. اختر إجابة أخرى من الخيارات المتبقية.");
+      // أعد رسم لإظهار الخيار الخاطئ مشطوباً
       renderQuestion();
+      // انتظار قصير قبل عرض رسالة إعادة المحاولة
+      await sleep(600);
+      showAssist("🎯 الإجابة المزدوجة", "إجابة خاطئة! يمكنك المحاولة مرة أخرى. اختر إجابة أخرى من الخيارات المتبقية.");
       startTimer();
       return;
     }
+
+    // لا توجد إجابة مزدوجة أو استُخدمت بالفعل — اكشف عن الصحيحة والخاطئة
+    state.revealed = true;
+    renderQuestion();
 
     sounds.wrong();
     state.streak = 0;
