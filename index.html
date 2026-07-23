@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>من سيربح المليون</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Socket.IO client library لوضع المعركة -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- ====== شاشة القائمة الرئيسية ====== -->
+    <section id="screen-menu" class="screen active">
+      <div class="menu-container">
+        <div class="logo">
+          <div class="logo-icon">💰</div>
+          <h1 class="logo-title">من سيربح المليون</h1>
+          <p class="logo-subtitle">لعبة الأسئلة الثقافية</p>
+        </div>
+        <div class="menu-buttons">
+          <button class="btn btn-primary btn-lg" onclick="showScreen('modes')">
+            <span>🎮</span> ابدأ اللعب
+          </button>
+          <button class="btn btn-lg battle-menu-btn" onclick="showScreen('battle-lobby')">
+            <span>⚔️</span> معركة الأسئلة
+          </button>
+          <button class="btn btn-secondary" onclick="showScreen('stats')">
+            <span>📊</span> الإحصائيات
+          </button>
+          <button class="btn btn-secondary" onclick="showScreen('howto')">
+            <span>📖</span> كيف تلعب
+          </button>
+          <button class="btn btn-secondary" onclick="showScreen('settings')">
+            <span>⚙️</span> الإعدادات
+          </button>
+        </div>
+        <div class="sound-toggle">
+          <button id="sound-btn" class="btn btn-icon" onclick="toggleSound()" title="الصوت">
+            <span id="sound-icon">🔊</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة اختيار الوضع ====== -->
+    <section id="screen-modes" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>اختر وضع اللعب</h2>
+      </div>
+      <div class="modes-grid" id="modes-grid"></div>
+    </section>
+
+    <!-- ====== شاشة قواعد الوضع ====== -->
+    <section id="screen-rules" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('modes')">→</button>
+        <h2 id="rules-title">قواعد الوضع</h2>
+      </div>
+      <div class="rules-container">
+        <div id="rules-content" class="rules-card"></div>
+        <button class="btn btn-primary btn-lg" id="start-game-btn" onclick="startSelectedMode()">ابدأ الآن</button>
+      </div>
+    </section>
+
+    <!-- ====== شاشة اللعب ====== -->
+    <section id="screen-playing" class="screen">
+      <div class="game-layout">
+        <header class="game-header">
+          <div class="header-info">
+            <div class="info-chip">
+              <span class="info-label">الوضع</span>
+              <span class="info-value" id="game-mode-name">—</span>
+            </div>
+            <div class="info-chip" id="prize-chip">
+              <span class="info-label">الجائزة</span>
+              <span class="info-value" id="current-prize">0</span>
+            </div>
+            <div class="info-chip" id="lives-chip" style="display:none;">
+              <span class="info-label">الأرواح</span>
+              <span class="info-value" id="lives-display">—</span>
+            </div>
+            <div class="info-chip" id="score-chip" style="display:none;">
+              <span class="info-label">النقاط</span>
+              <span class="info-value" id="current-score">0</span>
+            </div>
+          </div>
+          <div class="header-actions">
+            <div class="streak-badge" id="streak-badge" style="display:none;">
+              <span>🔥</span> <span id="streak-count">0</span>
+            </div>
+            <button class="btn btn-walkaway" id="walkaway-btn" onclick="walkAway()" style="display:none;">انسحاب</button>
+            <button class="btn btn-menu-exit" id="exit-menu-btn" onclick="exitToMenu()" style="display:none;">القائمة</button>
+          </div>
+        </header>
+
+        <div id="timer-container" class="timer-container" style="display:none;">
+          <div class="timer-label">
+            <span>الوقت المتبقي</span>
+            <span class="timer-value" id="timer-value">0</span>
+          </div>
+          <div class="timer-bar-bg">
+            <div class="timer-bar" id="timer-bar"></div>
+          </div>
+        </div>
+
+        <div class="game-main">
+          <div class="game-content">
+            <div class="question-card">
+              <div class="question-meta">
+                <span>السؤال <strong id="question-number">1</strong></span>
+                <span id="question-topic" class="topic-tag"></span>
+                <span id="correct-count-tag" class="correct-tag" style="display:none;"></span>
+              </div>
+              <p class="question-text" id="question-text">جارٍ تحميل السؤال…</p>
+            </div>
+
+            <div class="options-grid" id="options-grid"></div>
+
+            <div id="loading-next" class="loading-next" style="display:none;">جارٍ تجهيز السؤال التالي…</div>
+
+            <div id="assist-panel" class="assist-panel" style="display:none;"></div>
+
+            <div id="explanation-panel" class="explanation-panel" style="display:none;">
+              <span class="explanation-title">💡 معلومة:</span>
+              <span id="explanation-text"></span>
+            </div>
+
+            <div id="next-question-wrapper" style="display:none;">
+              <button class="btn btn-next" id="next-question-btn" onclick="goToNextQuestion()">
+                السؤال التالي ←
+              </button>
+            </div>
+
+            <!-- شريط تحميل السؤال التالي — يظهر عند الضغط على الزر -->
+            <div id="loading-progress-wrapper" class="loading-progress-wrapper" style="display:none;">
+              <div class="loading-progress-text">
+                <span class="loading-spinner"></span>
+                <span id="loading-progress-label">جارٍ تجهيز السؤال التالي…</span>
+              </div>
+              <div class="loading-progress-track">
+                <div class="loading-progress-bar" id="loading-progress-bar"></div>
+              </div>
+              <div class="loading-progress-status" id="loading-progress-status">يرجى الانتظار…</div>
+            </div>
+
+            <div class="lifelines" id="lifelines"></div>
+          </div>
+
+          <aside class="prize-ladder" id="prize-ladder"></aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة النهاية ====== -->
+    <section id="screen-end" class="screen">
+      <div class="end-container">
+        <div class="end-icon" id="end-icon">🏆</div>
+        <h2 class="end-title" id="end-title">انتهت اللعبة</h2>
+        <p class="end-subtitle" id="end-subtitle"></p>
+        <div class="end-stats">
+          <div class="end-stat">
+            <span class="stat-label">المكسب</span>
+            <span class="stat-value" id="end-prize">0</span>
+          </div>
+          <div class="end-stat">
+            <span class="stat-label">إجابات صحيحة</span>
+            <span class="stat-value" id="end-correct">0</span>
+          </div>
+          <div class="end-stat">
+            <span class="stat-label">أطول سلسلة</span>
+            <span class="stat-value" id="end-streak">0</span>
+          </div>
+        </div>
+        <div class="end-buttons">
+          <button class="btn btn-primary btn-lg" onclick="showScreen('modes')">إعادة اللعب</button>
+          <button class="btn btn-secondary" onclick="showScreen('menu')">القائمة الرئيسية</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة الإحصائيات ====== -->
+    <section id="screen-stats" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>الإحصائيات</h2>
+      </div>
+      <div class="stats-container" id="stats-container"></div>
+    </section>
+
+    <!-- ====== شاشة ردهة المعركة (إنشاء/انضمام) ====== -->
+    <section id="screen-battle-lobby" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>⚔️ معركة الأسئلة</h2>
+      </div>
+      <div class="battle-lobby">
+        <!-- إعدادات الخادم -->
+        <div class="battle-server-card">
+          <label class="battle-label">رابط الخادم (Server URL)</label>
+          <input type="text" id="battle-server-url" class="text-input" placeholder="https://your-app.onrender.com">
+          <button class="btn btn-primary" onclick="saveBattleServerUrl()">حفظ الرابط</button>
+          <p class="battle-server-status" id="battle-server-status"></p>
+        </div>
+
+        <!-- تبويبات إنشاء/انضمام -->
+        <div class="battle-tabs">
+          <button class="battle-tab active" id="tab-create" onclick="switchBattleTab('create')">إنشاء غرفة</button>
+          <button class="battle-tab" id="tab-join" onclick="switchBattleTab('join')">انضمام لغرفة</button>
+        </div>
+
+        <!-- نموذج إنشاء غرفة -->
+        <div class="battle-form" id="form-create">
+          <div class="battle-field">
+            <label class="battle-label">اسمك</label>
+            <input type="text" id="create-name" class="text-input" placeholder="أدخل اسمك" maxlength="20">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">معرف الغرفة (Room ID)</label>
+            <input type="text" id="create-room-id" class="text-input" placeholder="مثال: room123" maxlength="30">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">كلمة المرور</label>
+            <input type="password" id="create-password" class="text-input" placeholder="كلمة مرور الغرفة" maxlength="50">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">مفتاح OpenRouter API (مطلوب لإنشاء الغرفة)</label>
+            <input type="password" id="create-api-key" class="text-input" placeholder="sk-or-v1-..." maxlength="200">
+            <p class="battle-hint">يُستخدم مفتاحك لتوليد الأسئلة بالذكاء الاصطناعي</p>
+          </div>
+          <button class="btn btn-primary btn-lg" onclick="createBattleRoom()">إنشاء الغرفة</button>
+        </div>
+
+        <!-- نموذج الانضمام لغرفة -->
+        <div class="battle-form" id="form-join" style="display:none;">
+          <div class="battle-field">
+            <label class="battle-label">اسمك</label>
+            <input type="text" id="join-name" class="text-input" placeholder="أدخل اسمك" maxlength="20">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">معرف الغرفة (Room ID)</label>
+            <input type="text" id="join-room-id" class="text-input" placeholder="أدخل معرف الغرفة" maxlength="30">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">كلمة المرور</label>
+            <input type="password" id="join-password" class="text-input" placeholder="كلمة مرور الغرفة" maxlength="50">
+          </div>
+          <button class="btn btn-primary btn-lg" onclick="joinBattleRoom()">انضمام</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة انتظار الخصم ====== -->
+    <section id="screen-battle-waiting" class="screen">
+      <div class="battle-waiting">
+        <div class="battle-waiting-icon">⏳</div>
+        <h2>في انتظار انضمام الخصم…</h2>
+        <p class="battle-waiting-desc">شارك معرف الغرفة وكلمة المرور مع صديقك</p>
+        <div class="battle-room-info">
+          <div class="battle-room-info-row">
+            <span>معرف الغرفة:</span>
+            <strong id="waiting-room-id">—</strong>
+          </div>
+          <div class="battle-room-info-row">
+            <span>اسمك:</span>
+            <strong id="waiting-player-name">—</strong>
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="leaveBattleLobby()">إلغاء والعودة</button>
+      </div>
+    </section>
+
+    <!-- ====== شاشة توليد الأسئلة ====== -->
+    <section id="screen-battle-generating" class="screen">
+      <div class="battle-generating">
+        <div class="loading-spinner-lg"></div>
+        <h2>جارٍ توليد الأسئلة بالذكاء الاصطناعي…</h2>
+        <p class="battle-generating-desc" id="battle-generating-text">يرجى الانتظار، يتم توليد 15 سؤالاً للمباراة</p>
+      </div>
+    </section>
+
+    <!-- ====== شاشة المعركة (اللعب) ====== -->
+    <section id="screen-battle-playing" class="screen">
+      <div class="battle-game-layout">
+        <header class="battle-header">
+          <button class="btn btn-icon" onclick="leaveBattleGame()" title="مغادرة">✕</button>
+          <div class="battle-players">
+            <div class="battle-player" id="battle-player-me">
+              <span class="battle-player-name" id="battle-my-name">أنت</span>
+              <span class="battle-player-score" id="battle-my-score">0</span>
+            </div>
+            <div class="battle-vs">VS</div>
+            <div class="battle-player" id="battle-player-opponent">
+              <span class="battle-player-name" id="battle-opponent-name">الخصم</span>
+              <span class="battle-player-score" id="battle-opponent-score">0</span>
+            </div>
+          </div>
+          <div class="battle-question-counter" id="battle-q-counter">سؤال 1/15</div>
+        </header>
+
+        <div class="battle-timer-container" id="battle-timer-container">
+          <div class="timer-label">
+            <span>الوقت المتبقي</span>
+            <span class="timer-value" id="battle-timer-value">30</span>
+          </div>
+          <div class="timer-bar-bg">
+            <div class="timer-bar" id="battle-timer-bar"></div>
+          </div>
+        </div>
+
+        <div class="battle-question-card">
+          <div class="battle-question-meta">
+            <span id="battle-q-topic" class="topic-tag"></span>
+            <span id="battle-q-difficulty" class="difficulty-tag"></span>
+            <span id="battle-q-points" class="points-tag"></span>
+          </div>
+          <p class="question-text" id="battle-question-text">جارٍ تحميل السؤال…</p>
+        </div>
+
+        <div class="options-grid" id="battle-options-grid"></div>
+
+        <!-- حالة الإجابة -->
+        <div id="battle-answer-status" class="battle-answer-status" style="display:none;"></div>
+
+        <!-- كشف الإجابة -->
+        <div id="battle-reveal-panel" class="battle-reveal-panel" style="display:none;">
+          <div class="battle-reveal-row" id="battle-reveal-me"></div>
+          <div class="battle-reveal-row" id="battle-reveal-opponent"></div>
+          <div id="battle-explanation-panel" class="explanation-panel" style="display:none; margin-top:12px;">
+            <span class="explanation-title">💡 معلومة:</span>
+            <span id="battle-explanation-text"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة نهاية المعركة ====== -->
+    <section id="screen-battle-end" class="screen">
+      <div class="end-container">
+        <div class="end-icon" id="battle-end-icon">🏆</div>
+        <h2 class="end-title" id="battle-end-title">انتهت المعركة</h2>
+        <p class="end-subtitle" id="battle-end-subtitle"></p>
+        <div class="end-stats">
+          <div class="end-stat">
+            <span class="stat-label" id="battle-end-my-label">أنت</span>
+            <span class="stat-value" id="battle-end-my-score">0</span>
+          </div>
+          <div class="end-stat">
+            <span class="stat-label" id="battle-end-opp-label">الخصم</span>
+            <span class="stat-value" id="battle-end-opp-score">0</span>
+          </div>
+        </div>
+        <div class="end-buttons">
+          <button class="btn btn-primary btn-lg" onclick="showScreen('battle-lobby')">معركة جديدة</button>
+          <button class="btn btn-secondary" onclick="showScreen('menu')">القائمة الرئيسية</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة كيف تلعب ====== -->
+    <section id="screen-howto" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>كيف تلعب</h2>
+      </div>
+      <div class="howto-container">
+        <div class="howto-card">
+          <h3>🎯 الهدف</h3>
+          <p>أجب عن الأسئلة الثقافية بصعوبة متدرجة للوصول إلى الجائزة الكبرى. كلما تقدمت في الأسئلة، زادت الجائزة وزادت الصعوبة.</p>
+        </div>
+        <div class="howto-card">
+          <h3>🎮 الأوضاع</h3>
+          <ul>
+            <li><strong>كلاسيكي:</strong> 15 سؤالاً بوسائل مساعدة، الجائزة الكبرى 5,000,000</li>
+            <li><strong>لانهائي:</strong> أسئلة لا تنتهي حتى تخطئ، كم تستطيع؟</li>
+            <li><strong>بقاء:</strong> 3 أرواح، كل 10 إجابات صحيحة تستعيد قلباً</li>
+            <li><strong>ماراثون:</strong> 30 سؤالاً بوقت محدود، جائزة 10,000,000</li>
+          </ul>
+        </div>
+        <div class="howto-card">
+          <h3>🛠️ وسائل المساعدة</h3>
+          <ul>
+            <li><strong>½ حذف إجابتين:</strong> يحذف خيارين خاطئين</li>
+            <li><strong>☎ الاتصال بصديق:</strong> يخمن صديقك الإجابة</li>
+            <li><strong>👥 رأي الجمهور:</strong> تصويت الجمهور على الإجابات</li>
+            <li><strong>🔁 استبدال السؤال:</strong> يبدّل السؤال بسؤال آخر</li>
+            <li><strong>⚡ إجابة مزدوجة:</strong> إذا أخطأت، تحصل على محاولة ثانية</li>
+          </ul>
+        </div>
+        <div class="howto-card">
+          <h3>💡 نصائح</h3>
+          <ul>
+            <li>اقرأ شرح كل إجابة قبل الانتقال للسؤال التالي</li>
+            <li>استخدم وسائل المساعدة بحكمة، فلكل واحدة استخدام واحد</li>
+            <li>في وضع البقاء، راقب أرواحك بعناية</li>
+            <li>المراحل الآمنة تضمن لك المبلغ حتى لو أخطأت بعدها</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة الإعدادات ====== -->
+    <section id="screen-settings" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>الإعدادات</h2>
+      </div>
+      <div class="settings-container">
+        <div class="setting-card">
+          <h3>🤖 توليد الأسئلة بالذكاء الاصطناعي (اختياري)</h3>
+          <p class="setting-desc">أدخل مفتاح OpenRouter API لاستخدام الذكاء الاصطناعي في توليد أسئلة لا نهائية. بدون مفتاح، ستُستخدم الأسئلة المدمجة في اللعبة.</p>
+          <input type="password" id="api-key-input" placeholder="sk-or-v1-..." class="text-input">
+          <div class="setting-actions">
+            <button class="btn btn-primary" onclick="handleSaveApiKey()">حفظ المفتاح</button>
+            <button class="btn btn-secondary" onclick="handleClearApiKey()">حذف المفتاح</button>
+          </div>
+          <p class="setting-status" id="api-status"></p>
+        </div>
+        <div class="setting-card">
+          <h3>🔊 الصوت</h3>
+          <label class="toggle-label">
+            <input type="checkbox" id="sound-checkbox" onchange="toggleSoundCheckbox(this)">
+            <span>تفعيل المؤثرات الصوتية</span>
+          </label>
+        </div>
+        <div class="setting-card">
+          <h3>🗑️ إعادة الضبط</h3>
+          <p class="setting-desc">حذف جميع الإحصائيات والتقدم المحفوظ</p>
+          <button class="btn btn-danger" onclick="resetAllData()">حذف كل البيانات</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
