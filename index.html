@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>من سيربح المليون</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Socket.IO client library لوضع المعركة -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- ====== شاشة القائمة الرئيسية ====== -->
+    <section id="screen-menu" class="screen active">
+      <div class="menu-container">
+        <div class="logo">
+          <div class="logo-icon">💰</div>
+          <h1 class="logo-title">من سيربح المليون</h1>
+          <p class="logo-subtitle">لعبة الأسئلة الثقافية</p>
+        </div>
+        <div class="menu-buttons">
+          <button class="btn btn-primary btn-lg" onclick="showScreen('modes')">
+            <span>🎮</span> ابدأ اللعب
+          </button>
+          <button class="btn btn-lg battle-menu-btn" onclick="showScreen('battle-lobby')">
+            <span>⚔️</span> معركة الأسئلة
+          </button>
+          <button class="btn btn-lg loy-menu-btn" onclick="showScreen('loy-intro')">
+            <span>🤔</span> لو خيروك
+          </button>
+          <button class="btn btn-secondary" onclick="showScreen('stats')">
+            <span>📊</span> الإحصائيات
+          </button>
+          <button class="btn btn-secondary" onclick="showScreen('howto')">
+            <span>📖</span> كيف تلعب
+          </button>
+          <button class="btn btn-secondary" onclick="showScreen('settings')">
+            <span>⚙️</span> الإعدادات
+          </button>
+        </div>
+        <div class="sound-toggle">
+          <button id="sound-btn" class="btn btn-icon" onclick="toggleSound()" title="الصوت">
+            <span id="sound-icon">🔊</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة اختيار الوضع ====== -->
+    <section id="screen-modes" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>اختر وضع اللعب</h2>
+      </div>
+      <div class="modes-grid" id="modes-grid"></div>
+    </section>
+
+    <!-- ====== شاشة قواعد الوضع ====== -->
+    <section id="screen-rules" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('modes')">→</button>
+        <h2 id="rules-title">قواعد الوضع</h2>
+      </div>
+      <div class="rules-container">
+        <div id="rules-content" class="rules-card"></div>
+        <button class="btn btn-primary btn-lg" id="start-game-btn" onclick="startSelectedMode()">ابدأ الآن</button>
+      </div>
+    </section>
+
+    <!-- ====== شاشة اللعب ====== -->
+    <section id="screen-playing" class="screen">
+      <div class="game-layout">
+        <header class="game-header">
+          <div class="header-info">
+            <div class="info-chip">
+              <span class="info-label">الوضع</span>
+              <span class="info-value" id="game-mode-name">—</span>
+            </div>
+            <div class="info-chip" id="prize-chip">
+              <span class="info-label">الجائزة</span>
+              <span class="info-value" id="current-prize">0</span>
+            </div>
+            <div class="info-chip" id="lives-chip" style="display:none;">
+              <span class="info-label">الأرواح</span>
+              <span class="info-value" id="lives-display">—</span>
+            </div>
+            <div class="info-chip" id="score-chip" style="display:none;">
+              <span class="info-label">النقاط</span>
+              <span class="info-value" id="current-score">0</span>
+            </div>
+          </div>
+          <div class="header-actions">
+            <div class="streak-badge" id="streak-badge" style="display:none;">
+              <span>🔥</span> <span id="streak-count">0</span>
+            </div>
+            <button class="btn btn-walkaway" id="walkaway-btn" onclick="walkAway()" style="display:none;">انسحاب</button>
+            <button class="btn btn-menu-exit" id="exit-menu-btn" onclick="exitToMenu()" style="display:none;">القائمة</button>
+          </div>
+        </header>
+
+        <div id="timer-container" class="timer-container" style="display:none;">
+          <div class="timer-label">
+            <span>الوقت المتبقي</span>
+            <span class="timer-value" id="timer-value">0</span>
+          </div>
+          <div class="timer-bar-bg">
+            <div class="timer-bar" id="timer-bar"></div>
+          </div>
+        </div>
+
+        <div class="game-main">
+          <div class="game-content">
+            <div class="question-card">
+              <div class="question-meta">
+                <span>السؤال <strong id="question-number">1</strong></span>
+                <span id="question-topic" class="topic-tag"></span>
+                <span id="correct-count-tag" class="correct-tag" style="display:none;"></span>
+              </div>
+              <p class="question-text" id="question-text">جارٍ تحميل السؤال…</p>
+            </div>
+
+            <div class="options-grid" id="options-grid"></div>
+
+            <div id="loading-next" class="loading-next" style="display:none;">جارٍ تجهيز السؤال التالي…</div>
+
+            <div id="assist-panel" class="assist-panel" style="display:none;"></div>
+
+            <div id="explanation-panel" class="explanation-panel" style="display:none;">
+              <span class="explanation-title">💡 معلومة:</span>
+              <span id="explanation-text"></span>
+            </div>
+
+            <div id="next-question-wrapper" style="display:none;">
+              <button class="btn btn-next" id="next-question-btn" onclick="goToNextQuestion()">
+                السؤال التالي ←
+              </button>
+            </div>
+
+            <!-- شريط تحميل السؤال التالي — يظهر عند الضغط على الزر -->
+            <div id="loading-progress-wrapper" class="loading-progress-wrapper" style="display:none;">
+              <div class="loading-progress-text">
+                <span class="loading-spinner"></span>
+                <span id="loading-progress-label">جارٍ تجهيز السؤال التالي…</span>
+              </div>
+              <div class="loading-progress-track">
+                <div class="loading-progress-bar" id="loading-progress-bar"></div>
+              </div>
+              <div class="loading-progress-status" id="loading-progress-status">يرجى الانتظار…</div>
+            </div>
+
+            <div class="lifelines" id="lifelines"></div>
+          </div>
+
+          <aside class="prize-ladder" id="prize-ladder"></aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة النهاية ====== -->
+    <section id="screen-end" class="screen">
+      <div class="end-container">
+        <div class="end-icon" id="end-icon">🏆</div>
+        <h2 class="end-title" id="end-title">انتهت اللعبة</h2>
+        <p class="end-subtitle" id="end-subtitle"></p>
+        <div class="end-stats">
+          <div class="end-stat">
+            <span class="stat-label">المكسب</span>
+            <span class="stat-value" id="end-prize">0</span>
+          </div>
+          <div class="end-stat">
+            <span class="stat-label">إجابات صحيحة</span>
+            <span class="stat-value" id="end-correct">0</span>
+          </div>
+          <div class="end-stat">
+            <span class="stat-label">أطول سلسلة</span>
+            <span class="stat-value" id="end-streak">0</span>
+          </div>
+        </div>
+        <div class="end-buttons">
+          <button class="btn btn-primary btn-lg" onclick="showScreen('modes')">إعادة اللعب</button>
+          <button class="btn btn-secondary" onclick="showScreen('menu')">القائمة الرئيسية</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة الإحصائيات ====== -->
+    <section id="screen-stats" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>الإحصائيات</h2>
+      </div>
+      <div class="stats-container" id="stats-container"></div>
+    </section>
+
+    <!-- ====== شاشة ردهة المعركة (إنشاء/انضمام) ====== -->
+    <section id="screen-battle-lobby" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>⚔️ معركة الأسئلة</h2>
+      </div>
+      <div class="battle-lobby">
+        <!-- إعدادات الخادم -->
+        <div class="battle-server-card">
+          <label class="battle-label">رابط الخادم (Server URL)</label>
+          <input type="text" id="battle-server-url" class="text-input" placeholder="https://your-app.onrender.com">
+          <button class="btn btn-primary" onclick="saveBattleServerUrl()">حفظ الرابط</button>
+          <p class="battle-server-status" id="battle-server-status"></p>
+        </div>
+
+        <!-- تبويبات إنشاء/انضمام -->
+        <div class="battle-tabs">
+          <button class="battle-tab active" id="tab-create" onclick="switchBattleTab('create')">إنشاء غرفة</button>
+          <button class="battle-tab" id="tab-join" onclick="switchBattleTab('join')">انضمام لغرفة</button>
+        </div>
+
+        <!-- نموذج إنشاء غرفة -->
+        <div class="battle-form" id="form-create">
+          <div class="battle-field">
+            <label class="battle-label">اسمك</label>
+            <input type="text" id="create-name" class="text-input" placeholder="أدخل اسمك" maxlength="20">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">معرف الغرفة (Room ID)</label>
+            <input type="text" id="create-room-id" class="text-input" placeholder="مثال: room123" maxlength="30">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">كلمة المرور</label>
+            <input type="password" id="create-password" class="text-input" placeholder="كلمة مرور الغرفة" maxlength="50">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">مفتاح OpenRouter API (مطلوب لإنشاء الغرفة)</label>
+            <input type="password" id="create-api-key" class="text-input" placeholder="sk-or-v1-..." maxlength="200">
+            <p class="battle-hint">يُستخدم مفتاحك لتوليد الأسئلة بالذكاء الاصطناعي</p>
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">الحد الأدنى لعدد اللاعبين لبدء اللعبة</label>
+            <div class="required-players-selector" id="required-players-selector">
+              <button type="button" class="rp-option active" data-value="2">لاعبان (2)</button>
+              <button type="button" class="rp-option" data-value="3">ثلاثة (3)</button>
+              <button type="button" class="rp-option" data-value="4">أربعة (4)</button>
+            </div>
+            <input type="hidden" id="create-required-players" value="2">
+            <p class="battle-hint">يمكن أن يدخل الغرفة حتى 4 لاعبين. المنشئ يبدأ اللعبة عند وصول العدد المطلوب.</p>
+          </div>
+          <button class="btn btn-primary btn-lg" onclick="createBattleRoom()">إنشاء الغرفة</button>
+        </div>
+
+        <!-- نموذج الانضمام لغرفة -->
+        <div class="battle-form" id="form-join" style="display:none;">
+          <div class="battle-field">
+            <label class="battle-label">اسمك</label>
+            <input type="text" id="join-name" class="text-input" placeholder="أدخل اسمك" maxlength="20">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">معرف الغرفة (Room ID)</label>
+            <input type="text" id="join-room-id" class="text-input" placeholder="أدخل معرف الغرفة" maxlength="30">
+          </div>
+          <div class="battle-field">
+            <label class="battle-label">كلمة المرور</label>
+            <input type="password" id="join-password" class="text-input" placeholder="كلمة مرور الغرفة" maxlength="50">
+          </div>
+          <button class="btn btn-primary btn-lg" onclick="joinBattleRoom()">انضمام</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة انتظار اللاعبين ====== -->
+    <section id="screen-battle-waiting" class="screen">
+      <div class="battle-waiting">
+        <div class="battle-waiting-icon">⏳</div>
+        <h2>في انتظار اللاعبين…</h2>
+        <p class="battle-waiting-desc">شارك معرف الغرفة وكلمة المرور مع أصدقائك</p>
+        <div class="battle-room-info">
+          <div class="battle-room-info-row">
+            <span>معرف الغرفة:</span>
+            <strong id="waiting-room-id">—</strong>
+          </div>
+          <div class="battle-room-info-row">
+            <span>اسمك:</span>
+            <strong id="waiting-player-name">—</strong>
+          </div>
+          <div class="battle-room-info-row">
+            <span>الحد الأدنى للبدء:</span>
+            <strong id="waiting-required-players">2</strong>
+          </div>
+        </div>
+
+        <h3 class="waiting-players-title">اللاعبون في الغرفة (<span id="waiting-active-count">1</span>/<span id="waiting-max-players">4</span>)</h3>
+        <div class="waiting-players-list" id="waiting-players-list"></div>
+
+        <div id="waiting-host-controls" class="waiting-host-controls" style="display:none;">
+          <button class="btn btn-primary btn-lg" id="waiting-start-btn" onclick="hostStartGame()" disabled>
+            ابدأ اللعبة
+          </button>
+          <p class="waiting-start-hint" id="waiting-start-hint">بانتظار وصول الحد الأدنى من اللاعبين…</p>
+        </div>
+
+        <p class="waiting-nonhost-msg" id="waiting-nonhost-msg" style="display:none;">بانتظار أن يبدأ منشئ الغرفة اللعبة…</p>
+
+        <button class="btn btn-secondary" onclick="leaveBattleLobby()">إلغاء والعودة</button>
+      </div>
+    </section>
+
+    <!-- ====== شاشة توليد الأسئلة ====== -->
+    <section id="screen-battle-generating" class="screen">
+      <div class="battle-generating">
+        <div class="loading-spinner-lg"></div>
+        <h2>جارٍ توليد الأسئلة بالذكاء الاصطناعي…</h2>
+        <p class="battle-generating-desc" id="battle-generating-text">يرجى الانتظار، يتم توليد 15 سؤالاً للمباراة</p>
+      </div>
+    </section>
+
+    <!-- ====== شاشة المعركة (اللعب) ====== -->
+    <section id="screen-battle-playing" class="screen">
+      <div class="battle-game-layout">
+        <header class="battle-header">
+          <button class="btn btn-icon" onclick="leaveBattleGame()" title="مغادرة">✕</button>
+          <div class="battle-players" id="battle-players-container"></div>
+          <div class="battle-question-counter" id="battle-q-counter">سؤال 1/15</div>
+        </header>
+
+        <div class="battle-timer-container" id="battle-timer-container">
+          <div class="timer-label">
+            <span>الوقت المتبقي</span>
+            <span class="timer-value" id="battle-timer-value">30</span>
+          </div>
+          <div class="timer-bar-bg">
+            <div class="timer-bar" id="battle-timer-bar"></div>
+          </div>
+        </div>
+
+        <div class="battle-question-card">
+          <div class="battle-question-meta">
+            <span id="battle-q-topic" class="topic-tag"></span>
+            <span id="battle-q-difficulty" class="difficulty-tag"></span>
+            <span id="battle-q-points" class="points-tag"></span>
+          </div>
+          <p class="question-text" id="battle-question-text">جارٍ تحميل السؤال…</p>
+        </div>
+
+        <div class="options-grid" id="battle-options-grid"></div>
+
+        <!-- حالة الإجابة -->
+        <div id="battle-answer-status" class="battle-answer-status" style="display:none;"></div>
+
+        <!-- كشف الإجابة -->
+        <div id="battle-reveal-panel" class="battle-reveal-panel" style="display:none;"></div>
+
+        <!-- عرض الفوز بالتخلف عندما يتبقّى لاعب واحد فقط -->
+        <div id="battle-forfeit-offer" class="forfeit-offer" style="display:none;">
+          <div class="forfeit-offer-card">
+            <div class="forfeit-offer-icon">🏆</div>
+            <h3 class="forfeit-offer-title">أنت اللاعب الوحيد المتبقي!</h3>
+            <p class="forfeit-offer-text">
+              غادر جميع منافسيك المعركة. يمكنك إنهاء اللعبة الآن والفوز بالتخلف،
+              أو مواصلة الإجابة عن الأسئلة المتبقية لتعزيز نتيجتك.
+            </p>
+            <p class="forfeit-offer-meta" id="forfeit-remaining-info"></p>
+            <div class="forfeit-offer-buttons">
+              <button class="btn btn-primary btn-lg" id="forfeit-claim-btn" onclick="claimForfeitWinNow()">إعلان فوزك الآن</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- الشرح -->
+        <div id="battle-explanation-panel" class="explanation-panel" style="display:none; margin-top:12px;">
+          <span class="explanation-title">💡 معلومة:</span>
+          <span id="battle-explanation-text"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة نهاية المعركة ====== -->
+    <section id="screen-battle-end" class="screen">
+      <div class="end-container">
+        <div class="end-icon" id="battle-end-icon">🏆</div>
+        <h2 class="end-title" id="battle-end-title">انتهت المعركة</h2>
+        <p class="end-subtitle" id="battle-end-subtitle"></p>
+        <div class="end-stats" id="battle-end-stats"></div>
+        <div class="end-buttons">
+          <button class="btn btn-primary btn-lg" id="battle-rematch-btn" onclick="requestRematch()">إعادة المباراة</button>
+          <button class="btn btn-secondary" onclick="showScreen('battle-lobby')">معركة جديدة</button>
+          <button class="btn btn-secondary" onclick="showScreen('menu')">القائمة الرئيسية</button>
+        </div>
+        <p class="rematch-waiting-msg" id="rematch-waiting-msg" style="display:none;"></p>
+      </div>
+    </section>
+
+    <!-- ====== شاشة ترحيب لعبة لو خيروك ====== -->
+    <section id="screen-loy-intro" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>🤔 لو خيروك</h2>
+      </div>
+      <div class="loy-intro-container">
+        <div class="loy-intro-card">
+          <div class="loy-intro-icon">🤔</div>
+          <h3 class="loy-intro-title">لو خيروك بين...</h3>
+          <p class="loy-intro-text">
+            خيارات صعبة، مضحكة، غريبة، وفلسفية تنتظرك!
+            اختر ما تفضّل، واكتشف كيف صوّت بقية الناس.
+            لا توجد إجابة صحيحة أو خاطئة — فقط اختيارك.
+          </p>
+          <div class="loy-intro-features">
+            <div class="loy-feature">
+              <span class="loy-feature-icon">🎭</span>
+              <span>أسئلة متنوعة: مضحكة وغريبة وصعبة وفلسفية</span>
+            </div>
+            <div class="loy-feature">
+              <span class="loy-feature-icon">📊</span>
+              <span>نسب مئوية فورية تعكس اختيار الناس</span>
+            </div>
+            <div class="loy-feature">
+              <span class="loy-feature-icon">♾️</span>
+              <span>أسئلة لا نهائية بالذكاء الاصطناعي + بنك احتياطي ضخم</span>
+            </div>
+            <div class="loy-feature">
+              <span class="loy-feature-icon">🏆</span>
+              <span>تتبّع نقاطك وسلسلة إجاباتك</span>
+            </div>
+          </div>
+          <div class="loy-question-count-selector">
+            <label class="battle-label">كم سؤالاً تريد في الجولة؟</label>
+            <div class="required-players-selector" id="loy-count-selector">
+              <button type="button" class="rp-option active" data-value="10">10 أسئلة</button>
+              <button type="button" class="rp-option" data-value="20">20 سؤالاً</button>
+              <button type="button" class="rp-option" data-value="0">∞ لا نهائي</button>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-lg loy-start-btn" onclick="startLoyGame()">ابدأ اللعب 🚀</button>
+          <p class="loy-intro-hint" id="loy-intro-hint"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة لعب لو خيروك ====== -->
+    <section id="screen-loy-playing" class="screen">
+      <div class="loy-game-layout">
+        <header class="loy-header">
+          <button class="btn btn-icon" onclick="exitLoyGame()" title="خروج">✕</button>
+          <div class="loy-stats-bar">
+            <div class="loy-stat-chip">
+              <span class="loy-stat-label">السؤال</span>
+              <span class="loy-stat-value" id="loy-question-counter">1</span>
+            </div>
+            <div class="loy-stat-chip">
+              <span class="loy-stat-label">نقاطك</span>
+              <span class="loy-stat-value" id="loy-score">0</span>
+            </div>
+            <div class="loy-stat-chip loy-streak-chip" id="loy-streak-chip" style="display:none;">
+              <span class="loy-stat-label">🔥 سلسلة</span>
+              <span class="loy-stat-value" id="loy-streak">0</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- العنوان الضخم "لو خيروك" في أعلى المنتصف -->
+        <div class="loy-big-title-wrap">
+          <h2 class="loy-big-title">لو خيروك</h2>
+          <div class="loy-big-title-underline"></div>
+          <p class="loy-big-title-hint" id="loy-topic-hint">—</p>
+        </div>
+
+        <!-- بطاقات الخيارات تظهر مباشرة تحت العنوان -->
+        <div class="loy-options-grid" id="loy-options-grid"></div>
+
+        <!-- لوحة النتائج بعد الإجابة -->
+        <div id="loy-reveal-panel" class="loy-reveal-panel" style="display:none;"></div>
+
+        <div class="loy-actions" id="loy-actions" style="display:none;">
+          <button class="btn btn-primary btn-lg" id="loy-next-btn" onclick="loyNext()">السؤال التالي ←</button>
+        </div>
+
+        <div id="loy-loading-next" class="loy-loading-next" style="display:none;">
+          <div class="spinner"></div>
+          <p>جارٍ تحضير سؤال جديد…</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة نهاية لعبة لو خيروك ====== -->
+    <section id="screen-loy-end" class="screen">
+      <div class="loy-end-container">
+        <div class="end-icon" id="loy-end-icon">🎉</div>
+        <h2 class="end-title" id="loy-end-title">انتهت الجولة!</h2>
+        <p class="end-subtitle" id="loy-end-subtitle"></p>
+        <div class="end-stats" id="loy-end-stats"></div>
+        <div class="end-buttons">
+          <button class="btn btn-primary btn-lg" onclick="startLoyGame()">جولة جديدة 🔄</button>
+          <button class="btn btn-secondary" onclick="showScreen('loy-intro')">الرجوع للبداية</button>
+          <button class="btn btn-secondary" onclick="showScreen('menu')">القائمة الرئيسية</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة كيف تلعب ====== -->
+    <section id="screen-howto" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>كيف تلعب</h2>
+      </div>
+      <div class="howto-container">
+        <div class="howto-card">
+          <h3>🎯 الهدف</h3>
+          <p>أجب عن الأسئلة الثقافية بصعوبة متدرجة للوصول إلى الجائزة الكبرى. كلما تقدمت في الأسئلة، زادت الجائزة وزادت الصعوبة.</p>
+        </div>
+        <div class="howto-card">
+          <h3>🎮 الأوضاع</h3>
+          <ul>
+            <li><strong>كلاسيكي:</strong> 15 سؤالاً بوسائل مساعدة، الجائزة الكبرى 5,000,000</li>
+            <li><strong>لانهائي:</strong> أسئلة لا تنتهي حتى تخطئ، كم تستطيع؟</li>
+            <li><strong>بقاء:</strong> 3 أرواح، كل 10 إجابات صحيحة تستعيد قلباً</li>
+            <li><strong>ماراثون:</strong> 30 سؤالاً بوقت محدود، جائزة 10,000,000</li>
+          </ul>
+        </div>
+        <div class="howto-card">
+          <h3>🛠️ وسائل المساعدة</h3>
+          <ul>
+            <li><strong>½ حذف إجابتين:</strong> يحذف خيارين خاطئين</li>
+            <li><strong>☎ الاتصال بصديق:</strong> يخمن صديقك الإجابة</li>
+            <li><strong>👥 رأي الجمهور:</strong> تصويت الجمهور على الإجابات</li>
+            <li><strong>🔁 استبدال السؤال:</strong> يبدّل السؤال بسؤال آخر</li>
+            <li><strong>⚡ إجابة مزدوجة:</strong> إذا أخطأت، تحصل على محاولة ثانية</li>
+          </ul>
+        </div>
+        <div class="howto-card">
+          <h3>💡 نصائح</h3>
+          <ul>
+            <li>اقرأ شرح كل إجابة قبل الانتقال للسؤال التالي</li>
+            <li>استخدم وسائل المساعدة بحكمة، فلكل واحدة استخدام واحد</li>
+            <li>في وضع البقاء، راقب أرواحك بعناية</li>
+            <li>المراحل الآمنة تضمن لك المبلغ حتى لو أخطأت بعدها</li>
+          </ul>
+        </div>
+        <div class="howto-card">
+          <h3>🤔 لو خيروك</h3>
+          <ul>
+            <li><strong>الفكرة:</strong> اختر بين خيارين أو أكثر في أسئلة ليس لها إجابة صحيحة</li>
+            <li><strong>النسب:</strong> بعد اختيارك، تُعرض نسب تصويت الناس لكل خيار</li>
+            <li><strong>التنوع:</strong> أسئلة مضحكة وغريبة وصعبة وفلسفية</li>
+            <li><strong>النقاط:</strong> كل سؤال تجيب عنه يمنحك نقطة، وكلما زادت سلسلتك زادت المكافأة</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== شاشة الإعدادات ====== -->
+    <section id="screen-settings" class="screen">
+      <div class="header-bar">
+        <button class="btn btn-icon" onclick="showScreen('menu')">→</button>
+        <h2>الإعدادات</h2>
+      </div>
+      <div class="settings-container">
+        <div class="setting-card">
+          <h3>🤖 توليد الأسئلة بالذكاء الاصطناعي (اختياري)</h3>
+          <p class="setting-desc">أدخل مفتاح OpenRouter API لاستخدام الذكاء الاصطناعي في توليد أسئلة لا نهائية. بدون مفتاح، ستُستخدم الأسئلة المدمجة في اللعبة.</p>
+          <input type="password" id="api-key-input" placeholder="sk-or-v1-..." class="text-input">
+          <div class="setting-actions">
+            <button class="btn btn-primary" onclick="handleSaveApiKey()">حفظ المفتاح</button>
+            <button class="btn btn-secondary" onclick="handleClearApiKey()">حذف المفتاح</button>
+          </div>
+          <p class="setting-status" id="api-status"></p>
+        </div>
+        <div class="setting-card">
+          <h3>🔊 الصوت</h3>
+          <label class="toggle-label">
+            <input type="checkbox" id="sound-checkbox" onchange="toggleSoundCheckbox(this)">
+            <span>تفعيل المؤثرات الصوتية</span>
+          </label>
+        </div>
+        <div class="setting-card">
+          <h3>🗑️ إعادة الضبط</h3>
+          <p class="setting-desc">حذف جميع الإحصائيات والتقدم المحفوظ</p>
+          <button class="btn btn-danger" onclick="resetAllData()">حذف كل البيانات</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
