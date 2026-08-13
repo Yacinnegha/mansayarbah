@@ -1351,7 +1351,7 @@ async function fetchQuestionFromAI(index, total) {
         "X-Title": "Arabic Millionaire Game",
       },
       body: JSON.stringify({
-        model: "deepseek/deepseek-v4-flash",
+        model: "nvidia/nemotron-3-ultra-550b-a55b:free",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -3333,7 +3333,7 @@ async function fetchLoyQuestionFromAI() {
         "X-Title": "Arabic Would You Rather Game",
       },
       body: JSON.stringify({
-        model: "deepseek/deepseek-v4-flash",
+        model: "nvidia/nemotron-3-ultra-550b-a55b:free",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -3610,7 +3610,7 @@ async function fetchLoyCommentFromAI(chosenText, otherText, chosenPct, topic, mo
         "X-Title": "Arabic Would You Rather Game",
       },
       body: JSON.stringify({
-        model: "deepseek/deepseek-v4-flash",
+        model: "nvidia/nemotron-3-ultra-550b-a55b:free",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
