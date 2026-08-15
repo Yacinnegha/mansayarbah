@@ -1541,7 +1541,7 @@ async function fetchQuestionFromAI(index, total) {
   try {
     const { data } = await callOpenRouterWithFallback({
       body: {
-        model: "google/gemma-4-31b-it:free",
+        model: "nvidia/nemotron-3-super-120b-a12b:free",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -3669,7 +3669,7 @@ async function fetchLoyQuestionFromAI() {
   try {
     const { data } = await callOpenRouterWithFallback({
       body: {
-        model: "google/gemma-4-31b-it:free",
+        model: "nvidia/nemotron-3-super-120b-a12b:free",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -3939,7 +3939,7 @@ async function fetchLoyCommentFromAI(chosenText, otherText, chosenPct, topic, mo
   try {
     const { data } = await callOpenRouterWithFallback({
       body: {
-        model: "google/gemma-4-31b-it:free",
+        model: "nvidia/nemotron-3-super-120b-a12b:free",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
